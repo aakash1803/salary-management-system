@@ -5,8 +5,6 @@ import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jws;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
@@ -23,16 +21,16 @@ import java.util.Date;
  * {@link Keys#hmacShaKeyFor(byte[])} based on the configured secret's byte length; the
  * configured secret must be at least 32 bytes (256 bits) as UTF-8, or key creation fails fast
  * at startup.
+ *
+ * <p>Constructed as a {@code @Bean} method in {@link SecurityConfig} (not {@code @Component}-
+ * scanned) - see that class's Javadoc for why.
  */
-@Component
 public class JwtService {
 
     private final SecretKey signingKey;
     private final Duration tokenValidity;
 
-    public JwtService(
-            @Value("${app.security.jwt.secret}") String secret,
-            @Value("${app.security.jwt.expiration-minutes:60}") long expirationMinutes) {
+    public JwtService(String secret, long expirationMinutes) {
         this.signingKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.tokenValidity = Duration.ofMinutes(expirationMinutes);
     }

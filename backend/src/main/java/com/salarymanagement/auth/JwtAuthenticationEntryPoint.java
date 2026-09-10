@@ -7,7 +7,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.web.AuthenticationEntryPoint;
-import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
@@ -19,8 +18,10 @@ import java.io.IOException;
  * by JwtAuthenticationFilter" (invalid/expired/malformed), since both simply leave the security
  * context empty and arrive here the same way. Never includes a stack trace or any internal
  * detail in the body.
+ *
+ * <p>Constructed as a {@code @Bean} method in {@link SecurityConfig} (not {@code @Component}-
+ * scanned) - see that class's Javadoc for why.
  */
-@Component
 public class JwtAuthenticationEntryPoint implements AuthenticationEntryPoint {
 
     private final ObjectMapper objectMapper;

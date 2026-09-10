@@ -10,7 +10,6 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
-import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -25,8 +24,10 @@ import java.util.List;
  * it is then rejected with 401 by {@link JwtAuthenticationEntryPoint} if it reaches a protected
  * endpoint. Both cases are handled identically - there is no separate error path here for
  * "missing" vs. "invalid" tokens.
+ *
+ * <p>Constructed as a {@code @Bean} method in {@link SecurityConfig} (not {@code @Component}-
+ * scanned) - see that class's Javadoc for why.
  */
-@Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private static final String BEARER_PREFIX = "Bearer ";
