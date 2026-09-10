@@ -4,7 +4,7 @@ import jakarta.validation.ConstraintViolationException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.orm.jpa.JpaSystemException;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
@@ -63,5 +63,28 @@ class EmployeeRepositoryTest {
 
         assertThrows(ConstraintViolationException.class,
                 () -> employeeRepository.saveAndFlush(missingFirstName));
+    }
+
+    @Test
+    void rejectsADuplicateEmployeeNumberAtTheDatabaseLevel() {
+        // The database's unique constraint on employee_number is the final protection against
+        // duplicates (see EmployeeService.create/update), independent of any application-level
+        // existsByEmployeeNumber check.
+        //
+        // This project's SQLite dialect (org.hibernate.community.dialect.SQLiteDialect) does not
+        // classify a SQLITE_CONSTRAINT_UNIQUE violation into Hibernate's
+        // ConstraintViolationException / Spring's DataIntegrityViolationException the way most
+        // dialects do - it falls through Hibernate's StandardSQLExceptionConverter as a generic
+        // GenericJDBCException, which Spring's HibernateExceptionTranslator then wraps as the
+        // catch-all JpaSystemException instead. EmployeeService.isUniqueConstraintViolation works
+        // around this by walking the exception's cause chain for the driver-specific
+        // org.sqlite.SQLiteException / SQLiteErrorCode; this test asserts the raw repository-level
+        // behavior this call site works around, so it expects JpaSystemException here rather than
+        // DataIntegrityViolationException.
+        employeeRepository.saveAndFlush(newEmployee("EMP-005"));
+        Employee duplicate = newEmployee("EMP-005");
+
+        assertThrows(JpaSystemException.class,
+                () -> employeeRepository.saveAndFlush(duplicate));
     }
 }

@@ -1,19 +1,30 @@
 package com.salarymanagement.employee;
 
 import com.salarymanagement.common.PageResponse;
+import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Read-only employee search/lookup API. Create/update, salary, and
- * authentication endpoints are out of scope for this slice.
+ * Employee search/lookup/create/update API. Salary, dashboard, and authentication endpoints are
+ * out of scope for this slice.
+ *
+ * <p>{@code create}/{@code update} deliberately return the plain {@link EmployeeResponse} body
+ * (like every other method here) rather than a {@code ResponseEntity} with a {@code Location}
+ * header - this keeps every endpoint in this controller consistent, and a {@code Location}
+ * header is optional per the requirements for this slice.
  */
 @RestController
 @RequestMapping("/api/employees")
@@ -68,5 +79,16 @@ public class EmployeeController {
     @GetMapping("/{id}")
     public EmployeeResponse getById(@PathVariable Long id) {
         return EmployeeResponse.from(employeeService.getById(id));
+    }
+
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public EmployeeResponse create(@Valid @RequestBody EmployeeRequest request) {
+        return EmployeeResponse.from(employeeService.create(request));
+    }
+
+    @PutMapping("/{id}")
+    public EmployeeResponse update(@PathVariable Long id, @Valid @RequestBody EmployeeRequest request) {
+        return EmployeeResponse.from(employeeService.update(id, request));
     }
 }
