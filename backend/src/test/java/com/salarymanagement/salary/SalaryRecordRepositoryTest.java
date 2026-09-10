@@ -153,4 +153,30 @@ class SalaryRecordRepositoryTest {
         assertThrows(ConstraintViolationException.class,
                 () -> salaryRecordRepository.saveAndFlush(missingEmployee));
     }
+
+    @Test
+    void breaksATieOnIdenticalEffectiveFromByIdDescending() {
+        // Two records sharing the same effectiveFrom is unusual but explicitly allowed by the
+        // domain rules; ordering must still be deterministic, using id (i.e. insertion order via
+        // IDENTITY generation) as the tie-breaker, most recently inserted first.
+        Employee employee = saveEmployee("EMP-109");
+        LocalDate sameDate = LocalDate.now();
+
+        SalaryRecord first = saveSalaryRecord(employee, "50000.00", sameDate);
+        SalaryRecord second = saveSalaryRecord(employee, "52000.00", sameDate);
+
+        assertTrue(second.getId() > first.getId());
+
+        Optional<SalaryRecord> current = salaryRecordRepository
+                .findFirstByEmployeeAndEffectiveFromLessThanEqualOrderByEffectiveFromDescIdDesc(
+                        employee, LocalDate.now());
+        assertTrue(current.isPresent());
+        assertEquals(second.getId(), current.get().getId());
+        assertEquals(new BigDecimal("52000.00"), current.get().getAmount());
+
+        List<SalaryRecord> history = salaryRecordRepository.findByEmployeeOrderByEffectiveFromDescIdDesc(employee);
+        assertEquals(2, history.size());
+        assertEquals(second.getId(), history.get(0).getId());
+        assertEquals(first.getId(), history.get(1).getId());
+    }
 }

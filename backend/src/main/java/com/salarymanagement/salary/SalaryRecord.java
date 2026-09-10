@@ -16,6 +16,7 @@ import jakarta.persistence.Table;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -66,6 +67,7 @@ public class SalaryRecord {
     private BigDecimal amount;
 
     @NotBlank
+    @Size(min = 3, max = 3)
     @Column(name = "currency", nullable = false, length = 3)
     private String currency;
 
