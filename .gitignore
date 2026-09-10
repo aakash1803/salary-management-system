@@ -1,0 +1,16 @@
+# SQLite
+backend/data/
+
+# Gradle
+backend/.gradle/
+backend/build/
+
+# IntelliJ
+.idea/
+*.iml
+
+# VS Code
+.vscode/
+
+# macOS
+.DS_Store
