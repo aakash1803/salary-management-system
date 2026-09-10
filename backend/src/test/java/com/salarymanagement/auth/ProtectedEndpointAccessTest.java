@@ -12,8 +12,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * End-to-end verification that the REAL Spring Security filter chain (not a mocked/bypassed
  * one, unlike the {@code @WebMvcTest} slice tests elsewhere in this project) protects the
- * employee endpoints. {@code /api/employees} and {@code /api/employees/{id}} are used as the
- * representative protected resources named in the requirements.
+ * employee and dashboard endpoints. {@code /api/employees}, {@code /api/employees/{id}}, and
+ * {@code /api/dashboard} are used as the representative protected resources named in the
+ * requirements - all three rely on the same {@code anyRequest().authenticated()} rule in
+ * {@code SecurityConfig}, so one additional pair of tests for {@code /api/dashboard} is enough to
+ * confirm that rule also covers the dashboard module, without repeating every case already
+ * covered for the employee endpoints above.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -48,6 +52,20 @@ class ProtectedEndpointAccessTest {
         String token = jwtService.generateToken("hr.manager");
 
         mockMvc.perform(get("/api/employees").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void dashboardWithoutTokenIsRejected() throws Exception {
+        mockMvc.perform(get("/api/dashboard"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void dashboardWithAValidTokenIsAllowed() throws Exception {
+        String token = jwtService.generateToken("hr.manager");
+
+        mockMvc.perform(get("/api/dashboard").header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk());
     }
 }
