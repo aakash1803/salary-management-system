@@ -1,0 +1,124 @@
+<!-- Breadcrumb -->
+<div class="breadcrumb">
+  <a routerLink="/employees" class="back-link">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+    Back to Employees
+  </a>
+</div>
+
+<app-page-header
+  [title]="employee().firstName + ' ' + employee().lastName"
+  [description]="'Employee Number: ' + employee().employeeNumber + ' • ' + employee().department"
+>
+  <div class="action-buttons">
+    <button type="button" class="btn btn-secondary" title="Edit Employee (Stage 2)">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+      Edit Employee
+    </button>
+    <button type="button" class="btn btn-primary" title="Add Salary Record (Stage 2)">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+      Add Salary Record
+    </button>
+  </div>
+</app-page-header>
+
+<!-- Overview Cards Grid -->
+<div class="overview-grid">
+  <!-- Employee Info Card -->
+  <div class="card info-card">
+    <div class="card-header">
+      <h2 class="card-title">Employee Details</h2>
+      <span class="badge badge-secondary">{{ employee().country }}</span>
+    </div>
+    <div class="info-grid">
+      <div class="info-item">
+        <span class="info-label">Employee Number</span>
+        <span class="info-value emp-code">{{ employee().employeeNumber }}</span>
+      </div>
+      <div class="info-item">
+        <span class="info-label">Full Name</span>
+        <span class="info-value">{{ employee().firstName }} {{ employee().lastName }}</span>
+      </div>
+      <div class="info-item">
+        <span class="info-label">Email Address</span>
+        <span class="info-value text-break">{{ employee().email }}</span>
+      </div>
+      <div class="info-item">
+        <span class="info-label">Country</span>
+        <span class="info-value">{{ employee().country }}</span>
+      </div>
+      <div class="info-item">
+        <span class="info-label">Department</span>
+        <span class="info-value">
+          <span class="badge badge-secondary">{{ employee().department }}</span>
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Current Salary Highlight Card -->
+  <div class="card salary-highlight-card">
+    <div class="card-header">
+      <h2 class="card-title">Current Compensation</h2>
+      <span class="badge badge-success">Active Rate</span>
+    </div>
+    <div class="salary-display">
+      <div class="salary-amount">
+        {{ formatSalary(employee().currentSalary, employee().currency) }}
+      </div>
+      <div class="salary-meta">
+        <span class="badge badge-info">{{ employee().currency }}</span>
+        <span class="meta-label">Effective from {{ formatDate(employee().effectiveFrom) }}</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Salary History Section -->
+<div class="card history-section">
+  <div class="card-header">
+    <div>
+      <h2 class="card-title">Salary Change History</h2>
+      <p class="section-subtitle">Chronological audit log of salary adjustments over time</p>
+    </div>
+  </div>
+
+  <div class="table-container">
+    <table class="data-table" aria-label="Salary History Table">
+      <thead>
+        <tr>
+          <th>Status</th>
+          <th>Effective From</th>
+          <th>Amount</th>
+          <th>Currency</th>
+          <th>Recorded Date</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (record of employee().salaryHistory; track record.id; let idx = $index) {
+          <tr [class.current-record-row]="idx === 0">
+            <td>
+              @if (idx === 0) {
+                <span class="badge badge-success">Current</span>
+              } @else {
+                <span class="badge badge-secondary">Historical</span>
+              }
+            </td>
+            <td>
+              <strong>{{ formatDate(record.effectiveFrom) }}</strong>
+            </td>
+            <td class="font-bold">
+              {{ formatSalary(record.amount, record.currency) }}
+            </td>
+            <td>
+              <span class="badge badge-info">{{ record.currency }}</span>
+            </td>
+            <td class="text-muted">
+              {{ formatDate(record.createdAt) }}
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+</div>
