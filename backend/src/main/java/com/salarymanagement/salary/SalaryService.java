@@ -7,7 +7,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Application service for salary records: adding a new salary entry, deriving the current
@@ -73,6 +75,34 @@ public class SalaryService {
         Employee employee = getEmployee(employeeId);
 
         return salaryRecordRepository.findByEmployeeOrderByEffectiveFromDescIdDesc(employee);
+    }
+
+    /**
+     * The current salary record (if any) for each of the given employee ids, computed in a
+     * single query rather than one lookup per employee. Used by other modules assembling a
+     * composite view - e.g. the employee list endpoint, which shows current salary/currency for
+     * a whole page of employees at once - without introducing an N+1 query pattern.
+     *
+     * <p>An employee id with no salary record currently in effect (including one with no salary
+     * records at all) is simply absent from the returned map rather than mapped to {@code null}.
+     */
+    public Map<Long, SalaryRecord> getCurrentSalariesByEmployeeIds(List<Long> employeeIds) {
+        if (employeeIds.isEmpty()) {
+            return Map.of();
+        }
+
+        List<SalaryRecord> applicableRecords = salaryRecordRepository
+                .findByEmployee_IdInAndEffectiveFromLessThanEqualOrderByEmployee_IdAscEffectiveFromDescIdDesc(
+                        employeeIds, LocalDate.now());
+
+        // Records arrive grouped by employee id, each group ordered with the current record
+        // first (latest effectiveFrom not after today, ties broken by id descending) - so the
+        // first record seen per employee id is exactly the one to keep.
+        Map<Long, SalaryRecord> currentSalaryByEmployeeId = new LinkedHashMap<>();
+        for (SalaryRecord record : applicableRecords) {
+            currentSalaryByEmployeeId.putIfAbsent(record.getEmployee().getId(), record);
+        }
+        return currentSalaryByEmployeeId;
     }
 
     private Employee getEmployee(Long employeeId) {

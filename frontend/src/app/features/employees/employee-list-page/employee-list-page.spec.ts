@@ -18,7 +18,9 @@ describe('EmployeeListPage Component', () => {
         lastName: 'Jenkins',
         email: 'sarah.jenkins@company.com',
         country: 'United States',
-        department: 'Engineering'
+        department: 'Engineering',
+        currentSalary: 95000,
+        currency: 'USD'
       },
       {
         id: 2,
@@ -27,7 +29,9 @@ describe('EmployeeListPage Component', () => {
         lastName: 'Vance',
         email: 'marcus.vance@company.com',
         country: 'United States',
-        department: 'Engineering'
+        department: 'Engineering',
+        currentSalary: null,
+        currency: null
       }
     ],
     page: 0,
@@ -71,6 +75,37 @@ describe('EmployeeListPage Component', () => {
     expect(component.totalPages()).toBe(3);
     expect(component.displayedEmployees().length).toBe(2);
     expect(component.rangeText()).toContain('Showing 1–5 of 12 employees');
+  });
+
+  it('renders current salary and currency for an employee that has an active salary record', () => {
+    const fixture = TestBed.createComponent(EmployeeListPage);
+    fixture.detectChanges();
+
+    const req = httpMock.expectOne((r) => r.url === '/api/employees');
+    req.flush(mockPageResponse);
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const rows = compiled.querySelectorAll('tbody tr');
+    expect(rows[0].textContent).toContain('$95,000');
+    expect(rows[0].textContent).toContain('USD');
+  });
+
+  it('renders a placeholder for an employee with no active salary record rather than inventing data', () => {
+    const fixture = TestBed.createComponent(EmployeeListPage);
+    fixture.detectChanges();
+
+    const req = httpMock.expectOne((r) => r.url === '/api/employees');
+    req.flush(mockPageResponse);
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const rows = compiled.querySelectorAll('tbody tr');
+    const secondRowCells = rows[1].querySelectorAll('td');
+    // Current Salary is the 6th column, Currency the 7th (Employee #, Name, Email, Country,
+    // Department, Current Salary, Currency, Actions).
+    expect(secondRowCells[5].textContent?.trim()).toBe('—');
+    expect(secondRowCells[6].textContent?.trim()).toBe('—');
   });
 
   it('debounces rapid search input resulting in only one API request after 300ms', () => {

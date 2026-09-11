@@ -6,6 +6,8 @@ export interface EmployeeResponse {
   email: string;
   country: string;
   department: string;
+  currentSalary?: number | null;
+  currency?: string | null;
 }
 
 export interface EmployeeRequest {

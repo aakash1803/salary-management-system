@@ -179,4 +179,80 @@ class SalaryRecordRepositoryTest {
         assertEquals(second.getId(), history.get(0).getId());
         assertEquals(first.getId(), history.get(1).getId());
     }
+
+    @Test
+    void findByEmployee_IdInReturnsTheApplicableRecordForEachRequestedEmployee() {
+        Employee employeeOne = saveEmployee("EMP-110");
+        Employee employeeTwo = saveEmployee("EMP-111");
+        Employee employeeThree = saveEmployee("EMP-112");
+
+        saveSalaryRecord(employeeOne, "50000.00", LocalDate.now().minusYears(1));
+        SalaryRecord currentForOne = saveSalaryRecord(employeeOne, "55000.00", LocalDate.now());
+        SalaryRecord currentForTwo = saveSalaryRecord(employeeTwo, "60000.00", LocalDate.now().minusMonths(1));
+        // employeeThree has no salary record at all.
+
+        List<SalaryRecord> results = salaryRecordRepository
+                .findByEmployee_IdInAndEffectiveFromLessThanEqualOrderByEmployee_IdAscEffectiveFromDescIdDesc(
+                        List.of(employeeOne.getId(), employeeTwo.getId(), employeeThree.getId()), LocalDate.now());
+
+        // Every applicable record for employeeOne and employeeTwo is returned (grouped by
+        // employee, current record first per group) - employeeThree contributes nothing.
+        assertEquals(3, results.size());
+        assertEquals(currentForOne.getId(), results.get(0).getId());
+        assertEquals(currentForTwo.getId(), results.get(2).getId());
+    }
+
+    @Test
+    void findByEmployee_IdInExcludesFutureDatedRecordsAndEmployeesOutsideTheRequestedIds() {
+        Employee employeeOne = saveEmployee("EMP-113");
+        Employee employeeTwo = saveEmployee("EMP-114");
+
+        SalaryRecord currentForOne = saveSalaryRecord(employeeOne, "45000.00", LocalDate.now());
+        saveSalaryRecord(employeeOne, "99000.00", LocalDate.now().plusMonths(6));
+        saveSalaryRecord(employeeTwo, "70000.00", LocalDate.now());
+
+        List<SalaryRecord> results = salaryRecordRepository
+                .findByEmployee_IdInAndEffectiveFromLessThanEqualOrderByEmployee_IdAscEffectiveFromDescIdDesc(
+                        List.of(employeeOne.getId()), LocalDate.now());
+
+        assertEquals(1, results.size());
+        assertEquals(currentForOne.getId(), results.get(0).getId());
+    }
+
+    @Test
+    void findByEmployee_IdInReturnsEmptyListWhenNoIdsAreApplicable() {
+        Employee employee = saveEmployee("EMP-115");
+        saveSalaryRecord(employee, "40000.00", LocalDate.now().plusMonths(1));
+
+        List<SalaryRecord> results = salaryRecordRepository
+                .findByEmployee_IdInAndEffectiveFromLessThanEqualOrderByEmployee_IdAscEffectiveFromDescIdDesc(
+                        List.of(employee.getId()), LocalDate.now());
+
+        assertTrue(results.isEmpty());
+    }
+
+    @Test
+    void findByEmployee_IdInBreaksATieOnIdenticalEffectiveFromByHighestIdWinning() {
+        // Same business rule as breaksATieOnIdenticalEffectiveFromByIdDescending above, but for
+        // the bulk lookup that powers the employee list's current-salary enrichment: two records
+        // sharing the same effectiveFrom for one employee must still resolve deterministically,
+        // with the higher-id (most recently inserted) record ordered first within that
+        // employee's group - the service (SalaryService#getCurrentSalariesByEmployeeIds) relies
+        // on exactly this ordering, since it just keeps whichever record comes first per
+        // employee.
+        Employee employee = saveEmployee("EMP-116");
+        LocalDate sameDate = LocalDate.now();
+
+        SalaryRecord lowerId = saveSalaryRecord(employee, "50000.00", sameDate);
+        SalaryRecord higherId = saveSalaryRecord(employee, "52000.00", sameDate);
+        assertTrue(higherId.getId() > lowerId.getId());
+
+        List<SalaryRecord> results = salaryRecordRepository
+                .findByEmployee_IdInAndEffectiveFromLessThanEqualOrderByEmployee_IdAscEffectiveFromDescIdDesc(
+                        List.of(employee.getId()), LocalDate.now());
+
+        assertEquals(2, results.size());
+        assertEquals(higherId.getId(), results.get(0).getId(), "the higher-id record must win the tie and sort first");
+        assertEquals(lowerId.getId(), results.get(1).getId());
+    }
 }

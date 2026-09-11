@@ -207,7 +207,7 @@ export class EmployeeListPage implements OnInit {
     });
   }
 
-  formatSalary(amount: number | undefined, currency: string | undefined): string {
+  formatSalary(amount: number | null | undefined, currency: string | null | undefined): string {
     if (amount === undefined || amount === null || !currency) {
       return '—';
     }

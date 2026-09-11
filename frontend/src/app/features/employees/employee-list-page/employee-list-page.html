@@ -130,10 +130,10 @@
               <span class="badge badge-secondary">{{ emp.department }}</span>
             </td>
             <td class="font-medium">
-              —
+              {{ formatSalary(emp.currentSalary, emp.currency) }}
             </td>
             <td>
-              <span class="text-secondary">—</span>
+              <span class="text-secondary">{{ emp.currency || '—' }}</span>
             </td>
             <td class="text-right">
               <a [routerLink]="['/employees', emp.id]" class="btn btn-secondary btn-sm" title="View details">

@@ -2,6 +2,9 @@ package com.salarymanagement.employee;
 
 import com.salarymanagement.common.ConflictException;
 import com.salarymanagement.common.NotFoundException;
+import com.salarymanagement.salary.SalaryRecord;
+import com.salarymanagement.salary.SalaryService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -11,10 +14,15 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.ObjectMapper;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -47,12 +55,31 @@ class EmployeeControllerTest {
     @MockitoBean
     private EmployeeService employeeService;
 
+    @MockitoBean
+    private SalaryService salaryService;
+
     @Autowired
     private ObjectMapper objectMapper;
 
     private Employee sampleEmployee() {
         return new Employee("EMP-001", "Alice", "Johnson",
                 "alice.johnson@example.com", "United Kingdom", "Engineering");
+    }
+
+    /**
+     * Default stub so every existing test - most of which don't care about salary data at all -
+     * keeps working unchanged: {@link EmployeeController#search} always calls
+     * {@code salaryService.getCurrentSalariesByEmployeeIds(...)} to enrich the page, and this
+     * gives it an empty map (i.e. "no employee on this page has a current salary") unless a test
+     * overrides it.
+     */
+    @BeforeEach
+    void stubNoCurrentSalariesByDefault() {
+        // Collections.emptyMap() rather than Map.of(): several existing tests below use
+        // transient (never-persisted) Employee instances whose id is null, and looking such an
+        // id up in this default stub must not itself throw (Map.of()'s get() rejects a null
+        // key with NullPointerException; Collections.emptyMap() simply returns null).
+        when(salaryService.getCurrentSalariesByEmployeeIds(any())).thenReturn(Collections.emptyMap());
     }
 
     @Test
@@ -64,6 +91,67 @@ class EmployeeControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].employeeNumber").value("EMP-001"))
                 .andExpect(jsonPath("$.totalElements").value(1));
+    }
+
+    @Test
+    void listEmployeesIncludesCurrentSalaryWhenAnActiveSalaryRecordExists() throws Exception {
+        Employee employee = sampleEmployee();
+        // Id assigned via reflection (mirroring @GeneratedValue/IDENTITY behavior on a real
+        // save) since this entity is never persisted in this controller slice test.
+        ReflectionTestUtils.setField(employee, "id", 1L);
+        Page<Employee> page = new PageImpl<>(List.of(employee));
+        SalaryRecord currentSalary = new SalaryRecord(employee, new BigDecimal("85000.00"), "GBP", LocalDate.now());
+
+        when(employeeService.search(any(), any(), any(), any(Pageable.class))).thenReturn(page);
+        when(salaryService.getCurrentSalariesByEmployeeIds(any()))
+                .thenReturn(Map.of(employee.getId(), currentSalary));
+
+        mockMvc.perform(get("/api/employees"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].currentSalary").value(85000.00))
+                .andExpect(jsonPath("$.content[0].currency").value("GBP"));
+    }
+
+    @Test
+    void listEmployeesReturnsNullSalaryFieldsWhenNoActiveSalaryRecordExists() throws Exception {
+        Page<Employee> page = new PageImpl<>(List.of(sampleEmployee()));
+
+        when(employeeService.search(any(), any(), any(), any(Pageable.class))).thenReturn(page);
+        when(salaryService.getCurrentSalariesByEmployeeIds(any())).thenReturn(Collections.emptyMap());
+
+        mockMvc.perform(get("/api/employees"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].currentSalary").doesNotExist())
+                .andExpect(jsonPath("$.content[0].currency").doesNotExist());
+    }
+
+    @Test
+    void listEmployeesStillSupportsPaginationAlongsideSalaryEnrichment() throws Exception {
+        Page<Employee> page = new PageImpl<>(
+                List.of(sampleEmployee()), org.springframework.data.domain.PageRequest.of(1, 5), 12);
+
+        when(employeeService.search(any(), any(), any(), any(Pageable.class))).thenReturn(page);
+
+        mockMvc.perform(get("/api/employees").param("page", "1").param("size", "5"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.page").value(1))
+                .andExpect(jsonPath("$.size").value(5))
+                .andExpect(jsonPath("$.totalElements").value(12));
+    }
+
+    @Test
+    void listEmployeesStillSupportsSearchAndFilterParamsAlongsideSalaryEnrichment() throws Exception {
+        Page<Employee> page = new PageImpl<>(List.of(sampleEmployee()));
+
+        when(employeeService.search(eq("Alice"), eq("United Kingdom"), eq("Engineering"), any(Pageable.class)))
+                .thenReturn(page);
+
+        mockMvc.perform(get("/api/employees")
+                        .param("search", "Alice")
+                        .param("country", "United Kingdom")
+                        .param("department", "Engineering"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].employeeNumber").value("EMP-001"));
     }
 
     @Test
