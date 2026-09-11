@@ -33,7 +33,7 @@ describe('EmployeeForm Component', () => {
     expect(component.empForm.invalid).toBe(true);
   });
 
-  it('should emit saveForm when form is valid', () => {
+  it('should emit exact EmployeeRequest payload without id or salary fields when valid', () => {
     const fixture = TestBed.createComponent(EmployeeForm);
     const component = fixture.componentInstance;
     fixture.detectChanges();
@@ -51,8 +51,39 @@ describe('EmployeeForm Component', () => {
     component.empForm.controls.department.setValue('Engineering');
 
     component.onSubmit();
-    expect(emittedData).toBeTruthy();
-    expect(emittedData.firstName).toBe('John');
+    expect(emittedData).toEqual({
+      employeeNumber: 'EMP-999',
+      firstName: 'John',
+      lastName: 'Doe',
+      email: 'john.doe@company.com',
+      country: 'United States',
+      department: 'Engineering'
+    });
+    expect(emittedData.id).toBeUndefined();
+    expect(emittedData.currentSalary).toBeUndefined();
+  });
+
+  it('should render error alert message when errorMessage input is passed', () => {
+    const fixture = TestBed.createComponent(EmployeeForm);
+    fixture.componentRef.setInput('errorMessage', 'Employee number already exists');
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.querySelector('.alert-error')?.textContent).toContain('Employee number already exists');
+  });
+
+  it('should disable submit and cancel buttons when isLoading input is true', () => {
+    const fixture = TestBed.createComponent(EmployeeForm);
+    fixture.componentRef.setInput('isLoading', true);
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const submitBtn = compiled.querySelector('button[type="submit"]') as HTMLButtonElement;
+    const cancelBtn = compiled.querySelector('button[type="button"]') as HTMLButtonElement;
+
+    expect(submitBtn.disabled).toBe(true);
+    expect(cancelBtn.disabled).toBe(true);
+    expect(submitBtn.textContent).toContain('Saving...');
   });
 
   it('should emit cancelForm when cancel button is clicked', () => {

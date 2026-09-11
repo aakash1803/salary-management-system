@@ -7,7 +7,7 @@ import { EmptyState } from '../../../shared/components/empty-state/empty-state';
 import { LoadingState } from '../../../shared/components/loading-state/loading-state';
 import { Modal } from '../../../shared/components/modal/modal';
 import { EmployeeForm } from '../components/employee-form/employee-form';
-import { Employee, EmployeeResponse, PageResponse } from '../models/employee.model';
+import { EmployeeRequest, EmployeeResponse, PageResponse } from '../models/employee.model';
 import { EmployeeService } from '../services/employee.service';
 
 @Component({
@@ -60,8 +60,10 @@ export class EmployeeListPage implements OnInit {
   readonly isLoading = signal(false);
   readonly errorMessage = signal<string | null>(null);
 
-  // Modal signal
+  // Modal signals
   readonly isAddModalOpen = signal(false);
+  readonly isSaving = signal(false);
+  readonly saveError = signal<string | null>(null);
 
   readonly rangeText = computed(() => {
     const total = this.totalItems();
@@ -174,17 +176,34 @@ export class EmployeeListPage implements OnInit {
   }
 
   openAddEmployeeModal() {
+    this.saveError.set(null);
+    this.isSaving.set(false);
     this.isAddModalOpen.set(true);
   }
 
   closeAddEmployeeModal() {
     this.isAddModalOpen.set(false);
+    this.saveError.set(null);
+    this.isSaving.set(false);
   }
 
-  onSaveNewEmployee(data: Partial<Employee>) {
-    this.closeAddEmployeeModal();
-    this.currentPage.set(1);
-    this.loadEmployees();
+  onSaveNewEmployee(request: EmployeeRequest) {
+    this.isSaving.set(true);
+    this.saveError.set(null);
+
+    this.employeeService.createEmployee(request).subscribe({
+      next: () => {
+        this.isSaving.set(false);
+        this.closeAddEmployeeModal();
+        this.currentPage.set(1);
+        this.loadEmployees();
+      },
+      error: (err) => {
+        this.isSaving.set(false);
+        const msg = err?.error?.message || 'Failed to create employee. Please check your inputs.';
+        this.saveError.set(msg);
+      }
+    });
   }
 
   formatSalary(amount: number | undefined, currency: string | undefined): string {

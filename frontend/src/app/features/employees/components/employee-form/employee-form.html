@@ -1,4 +1,10 @@
 <form [formGroup]="empForm" (ngSubmit)="onSubmit()" class="employee-form" novalidate>
+  @if (errorMessage()) {
+    <div class="alert alert-error mb-md">
+      {{ errorMessage() }}
+    </div>
+  }
+
   <div class="form-grid">
     <!-- Employee Number -->
     <div class="form-group">
@@ -104,11 +110,11 @@
   </div>
 
   <div class="form-actions">
-    <button type="button" class="btn btn-secondary" (click)="cancelForm.emit()">
+    <button type="button" class="btn btn-secondary" [disabled]="isLoading()" (click)="cancelForm.emit()">
       Cancel
     </button>
-    <button type="submit" class="btn btn-primary">
-      Save Employee
+    <button type="submit" class="btn btn-primary" [disabled]="isLoading()">
+      {{ isLoading() ? 'Saving...' : 'Save Employee' }}
     </button>
   </div>
 </form>

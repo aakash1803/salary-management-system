@@ -3,7 +3,7 @@ import { provideRouter } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { EmployeeDetailPage } from './employee-detail-page';
-import { EmployeeResponse } from '../models/employee.model';
+import { EmployeeResponse, EmployeeRequest } from '../models/employee.model';
 
 describe('EmployeeDetailPage Component', () => {
   let httpMock: HttpTestingController;
@@ -156,5 +156,91 @@ describe('EmployeeDetailPage Component', () => {
     const compiled = fixture.nativeElement as HTMLElement;
     expect(compiled.querySelector('app-modal')).toBeTruthy();
     expect(compiled.querySelector('app-salary-form')).toBeTruthy();
+  });
+
+  it('calls EmployeeService.updateEmployee with correct PUT payload, closes modal and updates displayed employee on success', () => {
+    const fixture = TestBed.createComponent(EmployeeDetailPage);
+    fixture.componentRef.setInput('id', '1');
+    fixture.detectChanges();
+
+    const getReq = httpMock.expectOne('/api/employees/1');
+    getReq.flush(mockEmployee);
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance;
+    component.openEditModal();
+    fixture.detectChanges();
+    expect(component.isEditModalOpen()).toBe(true);
+
+    const updateRequest: EmployeeRequest = {
+      employeeNumber: 'EMP-1001',
+      firstName: 'Sarah Updated',
+      lastName: 'Jenkins',
+      email: 'sarah.updated@company.com',
+      country: 'United States',
+      department: 'Executive'
+    };
+
+    component.onSaveEditEmployee(updateRequest);
+    expect(component.isSaving()).toBe(true);
+
+    const putReq = httpMock.expectOne('/api/employees/1');
+    expect(putReq.request.method).toBe('PUT');
+    expect(putReq.request.body).toEqual(updateRequest);
+    expect(putReq.request.body.id).toBeUndefined();
+
+    const updatedEmployeeResponse: EmployeeResponse = {
+      id: 1,
+      ...updateRequest
+    };
+    putReq.flush(updatedEmployeeResponse);
+    fixture.detectChanges();
+
+    expect(component.isSaving()).toBe(false);
+    expect(component.isEditModalOpen()).toBe(false);
+    expect(component.employee()?.firstName).toBe('Sarah Updated');
+    expect(component.employee()?.email).toBe('sarah.updated@company.com');
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.textContent).toContain('Sarah Updated Jenkins');
+  });
+
+  it('keeps Edit Employee modal open and displays error message when API returns 409 conflict on update', () => {
+    const fixture = TestBed.createComponent(EmployeeDetailPage);
+    fixture.componentRef.setInput('id', '1');
+    fixture.detectChanges();
+
+    const getReq = httpMock.expectOne('/api/employees/1');
+    getReq.flush(mockEmployee);
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance;
+    component.openEditModal();
+    fixture.detectChanges();
+
+    const updateRequest: EmployeeRequest = {
+      employeeNumber: 'EMP-1001',
+      firstName: 'Sarah',
+      lastName: 'Jenkins',
+      email: 'existing.email@company.com',
+      country: 'United States',
+      department: 'Engineering'
+    };
+
+    component.onSaveEditEmployee(updateRequest);
+    expect(component.isSaving()).toBe(true);
+
+    const putReq = httpMock.expectOne('/api/employees/1');
+    expect(putReq.request.method).toBe('PUT');
+    putReq.flush(
+      { message: 'Email address is already taken' },
+      { status: 409, statusText: 'Conflict' }
+    );
+    fixture.detectChanges();
+
+    expect(component.isSaving()).toBe(false);
+    expect(component.isEditModalOpen()).toBe(true);
+    expect(component.saveError()).toBe('Email address is already taken');
+    expect(component.employee()?.email).toBe('sarah.jenkins@company.com');
   });
 });

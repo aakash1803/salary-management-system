@@ -4,7 +4,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { vi } from 'vitest';
 import { EmployeeListPage } from './employee-list-page';
-import { PageResponse, EmployeeResponse } from '../models/employee.model';
+import { PageResponse, EmployeeResponse, EmployeeRequest } from '../models/employee.model';
 
 describe('EmployeeListPage Component', () => {
   let httpMock: HttpTestingController;
@@ -219,5 +219,84 @@ describe('EmployeeListPage Component', () => {
     const compiled = fixture.nativeElement as HTMLElement;
     expect(compiled.querySelector('app-modal')).toBeTruthy();
     expect(compiled.querySelector('app-employee-form')).toBeTruthy();
+  });
+
+  it('calls EmployeeService.createEmployee with correct POST payload, closes modal and reloads employee list on success', () => {
+    const fixture = TestBed.createComponent(EmployeeListPage);
+    fixture.detectChanges();
+
+    const initialReq = httpMock.expectOne((r) => r.url === '/api/employees');
+    initialReq.flush(mockPageResponse);
+
+    const component = fixture.componentInstance;
+    component.openAddEmployeeModal();
+    fixture.detectChanges();
+    expect(component.isAddModalOpen()).toBe(true);
+
+    const newEmpRequest: EmployeeRequest = {
+      employeeNumber: 'EMP-2000',
+      firstName: 'Alice',
+      lastName: 'Smith',
+      email: 'alice.smith@company.com',
+      country: 'Canada',
+      department: 'Finance'
+    };
+
+    component.onSaveNewEmployee(newEmpRequest);
+    expect(component.isSaving()).toBe(true);
+
+    const postReq = httpMock.expectOne('/api/employees');
+    expect(postReq.request.method).toBe('POST');
+    expect(postReq.request.body).toEqual(newEmpRequest);
+    expect(postReq.request.body.id).toBeUndefined();
+
+    const createdEmpResponse: EmployeeResponse = {
+      id: 10,
+      ...newEmpRequest
+    };
+    postReq.flush(createdEmpResponse);
+
+    expect(component.isSaving()).toBe(false);
+    expect(component.isAddModalOpen()).toBe(false);
+
+    // List reloaded on page 1
+    const reloadReq = httpMock.expectOne((r) => r.url === '/api/employees');
+    expect(reloadReq.request.params.get('page')).toBe('0');
+    reloadReq.flush(mockPageResponse);
+  });
+
+  it('keeps Add Employee modal open and displays error message when API returns 409 conflict', () => {
+    const fixture = TestBed.createComponent(EmployeeListPage);
+    fixture.detectChanges();
+
+    const initialReq = httpMock.expectOne((r) => r.url === '/api/employees');
+    initialReq.flush(mockPageResponse);
+
+    const component = fixture.componentInstance;
+    component.openAddEmployeeModal();
+    fixture.detectChanges();
+
+    const duplicateRequest: EmployeeRequest = {
+      employeeNumber: 'EMP-1001',
+      firstName: 'Sarah',
+      lastName: 'Jenkins',
+      email: 'sarah.jenkins@company.com',
+      country: 'United States',
+      department: 'Engineering'
+    };
+
+    component.onSaveNewEmployee(duplicateRequest);
+    expect(component.isSaving()).toBe(true);
+
+    const postReq = httpMock.expectOne('/api/employees');
+    expect(postReq.request.method).toBe('POST');
+    postReq.flush(
+      { message: 'Employee number or email already exists' },
+      { status: 409, statusText: 'Conflict' }
+    );
+
+    expect(component.isSaving()).toBe(false);
+    expect(component.isAddModalOpen()).toBe(true);
+    expect(component.saveError()).toBe('Employee number or email already exists');
   });
 });

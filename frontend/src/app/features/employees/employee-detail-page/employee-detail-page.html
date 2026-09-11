@@ -45,6 +45,8 @@
       <app-employee-form
         mode="EDIT"
         [employee]="emp"
+        [isLoading]="isSaving()"
+        [errorMessage]="saveError()"
         (saveForm)="onSaveEditEmployee($event)"
         (cancelForm)="closeEditModal()"
       />

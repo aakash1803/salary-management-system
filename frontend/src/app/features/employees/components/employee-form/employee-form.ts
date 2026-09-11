@@ -1,6 +1,6 @@
 import { Component, effect, input, output } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Employee, EmployeeResponse } from '../../models/employee.model';
+import { Employee, EmployeeRequest, EmployeeResponse } from '../../models/employee.model';
 
 @Component({
   selector: 'app-employee-form',
@@ -12,12 +12,32 @@ import { Employee, EmployeeResponse } from '../../models/employee.model';
 export class EmployeeForm {
   readonly mode = input<'CREATE' | 'EDIT'>('CREATE');
   readonly employee = input<EmployeeResponse | Employee | null>(null);
+  readonly isLoading = input<boolean>(false);
+  readonly errorMessage = input<string | null>(null);
 
-  readonly saveForm = output<Partial<Employee>>();
+  readonly saveForm = output<EmployeeRequest>();
   readonly cancelForm = output<void>();
 
-  readonly countries = ['United States', 'Germany', 'United Kingdom', 'Canada', 'Japan', 'France', 'India'];
-  readonly departments = ['Engineering', 'Product', 'Finance', 'Human Resources', 'Marketing', 'Operations'];
+  readonly countries = [
+    'Canada',
+    'France',
+    'Germany',
+    'India',
+    'Japan',
+    'United Kingdom',
+    'United States'
+  ];
+  readonly departments = [
+    'Engineering',
+    'Executive',
+    'Finance',
+    'Human Resources',
+    'Marketing',
+    'Operations',
+    'Product',
+    'Sales',
+    'Technology'
+  ];
 
   readonly empForm = new FormGroup({
     employeeNumber: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
@@ -41,9 +61,8 @@ export class EmployeeForm {
           department: emp.department,
         });
       } else if (this.mode() === 'CREATE' && !emp) {
-        const nextId = 'EMP-' + Math.floor(1015 + Math.random() * 800);
         this.empForm.reset({
-          employeeNumber: nextId,
+          employeeNumber: '',
           firstName: '',
           lastName: '',
           email: '',
@@ -60,7 +79,16 @@ export class EmployeeForm {
       return;
     }
 
-    const value = this.empForm.getRawValue();
-    this.saveForm.emit(value);
+    const rawValue = this.empForm.getRawValue();
+    const request: EmployeeRequest = {
+      employeeNumber: rawValue.employeeNumber.trim(),
+      firstName: rawValue.firstName.trim(),
+      lastName: rawValue.lastName.trim(),
+      email: rawValue.email.trim(),
+      country: rawValue.country,
+      department: rawValue.department
+    };
+
+    this.saveForm.emit(request);
   }
 }

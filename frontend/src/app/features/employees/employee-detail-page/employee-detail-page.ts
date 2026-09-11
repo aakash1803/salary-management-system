@@ -8,7 +8,7 @@ import { LoadingState } from '../../../shared/components/loading-state/loading-s
 import { Modal } from '../../../shared/components/modal/modal';
 import { EmployeeForm } from '../components/employee-form/employee-form';
 import { SalaryForm } from '../components/salary-form/salary-form';
-import { EmployeeResponse } from '../models/employee.model';
+import { EmployeeRequest, EmployeeResponse } from '../models/employee.model';
 import { EmployeeService } from '../services/employee.service';
 
 @Component({
@@ -29,8 +29,11 @@ export class EmployeeDetailPage {
   readonly isNotFound = signal(false);
   readonly errorMessage = signal<string | null>(null);
 
+  // Modal signals
   readonly isEditModalOpen = signal(false);
   readonly isSalaryModalOpen = signal(false);
+  readonly isSaving = signal(false);
+  readonly saveError = signal<string | null>(null);
 
   constructor() {
     toObservable(this.id).pipe(
@@ -73,15 +76,36 @@ export class EmployeeDetailPage {
   }
 
   openEditModal() {
+    this.saveError.set(null);
+    this.isSaving.set(false);
     this.isEditModalOpen.set(true);
   }
 
   closeEditModal() {
     this.isEditModalOpen.set(false);
+    this.saveError.set(null);
+    this.isSaving.set(false);
   }
 
-  onSaveEditEmployee(data: any) {
-    this.closeEditModal();
+  onSaveEditEmployee(request: EmployeeRequest) {
+    const currentEmp = this.employee();
+    if (!currentEmp) return;
+
+    this.isSaving.set(true);
+    this.saveError.set(null);
+
+    this.employeeService.updateEmployee(currentEmp.id, request).subscribe({
+      next: (updated) => {
+        this.isSaving.set(false);
+        this.employee.set(updated);
+        this.closeEditModal();
+      },
+      error: (err) => {
+        this.isSaving.set(false);
+        const msg = err?.error?.message || 'Failed to update employee. Please check your inputs.';
+        this.saveError.set(msg);
+      }
+    });
   }
 
   openSalaryModal() {

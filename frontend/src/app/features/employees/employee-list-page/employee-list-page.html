@@ -13,6 +13,8 @@
   <app-modal title="Add Employee" (closeModal)="closeAddEmployeeModal()">
     <app-employee-form
       mode="CREATE"
+      [isLoading]="isSaving()"
+      [errorMessage]="saveError()"
       (saveForm)="onSaveNewEmployee($event)"
       (cancelForm)="closeAddEmployeeModal()"
     />
