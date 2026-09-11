@@ -1,0 +1,10 @@
+nav {
+  display: flex;
+  gap: 1rem;
+  padding: 1rem;
+  border-bottom: 1px solid #ddd;
+}
+
+nav a.active {
+  font-weight: bold;
+}
