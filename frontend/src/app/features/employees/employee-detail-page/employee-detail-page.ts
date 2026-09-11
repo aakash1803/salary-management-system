@@ -1,5 +1,6 @@
 import { Component, DestroyRef, inject, input, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
 import { EMPTY, catchError, switchMap } from 'rxjs';
 import { PageHeader } from '../../../shared/components/page-header/page-header';
@@ -52,7 +53,7 @@ export class EmployeeDetailPage {
         this.errorMessage.set(null);
 
         return this.employeeService.getEmployeeById(numId).pipe(
-          catchError(err => {
+          catchError((err: HttpErrorResponse) => {
             this.employee.set(null);
             this.isLoading.set(false);
             if (err?.status === 404) {
@@ -100,7 +101,7 @@ export class EmployeeDetailPage {
         this.employee.set(updated);
         this.closeEditModal();
       },
-      error: (err) => {
+      error: (err: HttpErrorResponse) => {
         this.isSaving.set(false);
         const msg = err?.error?.message || 'Failed to update employee. Please check your inputs.';
         this.saveError.set(msg);

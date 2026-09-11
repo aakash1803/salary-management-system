@@ -1,5 +1,6 @@
 import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
 import { Subject, EMPTY, catchError, debounceTime, distinctUntilChanged, switchMap, tap } from 'rxjs';
 import { PageHeader } from '../../../shared/components/page-header/page-header';
@@ -131,7 +132,7 @@ export class EmployeeListPage implements OnInit {
     this.isLoading.set(false);
   }
 
-  private handleEmployeeLoadError(err: any) {
+  private handleEmployeeLoadError(err: HttpErrorResponse) {
     this.displayedEmployees.set([]);
     this.totalItems.set(0);
     this.totalPages.set(1);
@@ -198,7 +199,7 @@ export class EmployeeListPage implements OnInit {
         this.currentPage.set(1);
         this.loadEmployees();
       },
-      error: (err) => {
+      error: (err: HttpErrorResponse) => {
         this.isSaving.set(false);
         const msg = err?.error?.message || 'Failed to create employee. Please check your inputs.';
         this.saveError.set(msg);
