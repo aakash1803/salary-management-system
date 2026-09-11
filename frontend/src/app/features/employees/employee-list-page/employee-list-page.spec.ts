@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { vi } from 'vitest';
 import { EmployeeListPage } from './employee-list-page';
 import { PageResponse, EmployeeResponse } from '../models/employee.model';
 
@@ -72,7 +73,44 @@ describe('EmployeeListPage Component', () => {
     expect(component.rangeText()).toContain('Showing 1–5 of 12 employees');
   });
 
-  it('passes search, country, and department filter values to the API', () => {
+  it('debounces rapid search input resulting in only one API request after 300ms', () => {
+    vi.useFakeTimers();
+
+    const fixture = TestBed.createComponent(EmployeeListPage);
+    fixture.detectChanges();
+
+    // Initial load request
+    let req = httpMock.expectOne((r) => r.url === '/api/employees');
+    req.flush(mockPageResponse);
+
+    const component = fixture.componentInstance;
+
+    // Rapid search input sequence
+    component.onSearchChange({ target: { value: 'S' } } as any);
+    vi.advanceTimersByTime(100);
+    component.onSearchChange({ target: { value: 'Sa' } } as any);
+    vi.advanceTimersByTime(100);
+    component.onSearchChange({ target: { value: 'Sar' } } as any);
+    vi.advanceTimersByTime(100);
+    component.onSearchChange({ target: { value: 'Sarah' } } as any);
+
+    // No request yet before 300ms has elapsed from last keystroke
+    httpMock.expectNone((r) => r.url === '/api/employees');
+
+    // Fast-forward remaining 300ms
+    vi.advanceTimersByTime(300);
+
+    // Single request fired with final search value
+    req = httpMock.expectOne((r) => r.url === '/api/employees');
+    expect(req.request.params.get('search')).toBe('Sarah');
+    req.flush(mockPageResponse);
+
+    vi.useRealTimers();
+  });
+
+  it('does not trigger an API request for identical consecutive search values', () => {
+    vi.useFakeTimers();
+
     const fixture = TestBed.createComponent(EmployeeListPage);
     fixture.detectChanges();
 
@@ -80,16 +118,46 @@ describe('EmployeeListPage Component', () => {
     req.flush(mockPageResponse);
 
     const component = fixture.componentInstance;
-    component.searchQuery.set('Sarah');
-    component.selectedCountry.set('United States');
-    component.selectedDepartment.set('Engineering');
-    component.loadEmployees();
+
+    // Initial search
+    component.onSearchChange({ target: { value: 'Sarah' } } as any);
+    vi.advanceTimersByTime(300);
 
     req = httpMock.expectOne((r) => r.url === '/api/employees');
     expect(req.request.params.get('search')).toBe('Sarah');
+    req.flush(mockPageResponse);
+
+    // Repeated search input with identical value
+    component.onSearchChange({ target: { value: 'Sarah' } } as any);
+    vi.advanceTimersByTime(300);
+
+    // distinctUntilChanged suppresses second request
+    httpMock.expectNone((r) => r.url === '/api/employees');
+
+    vi.useRealTimers();
+  });
+
+  it('triggers API request immediately on country or department change without debounce', () => {
+    const fixture = TestBed.createComponent(EmployeeListPage);
+    fixture.detectChanges();
+
+    let req = httpMock.expectOne((r) => r.url === '/api/employees');
+    req.flush(mockPageResponse);
+
+    const component = fixture.componentInstance;
+
+    // Immediate country filter
+    component.onCountryChange({ target: { value: 'United States' } } as any);
+
+    req = httpMock.expectOne((r) => r.url === '/api/employees');
     expect(req.request.params.get('country')).toBe('United States');
+    req.flush(mockPageResponse);
+
+    // Immediate department filter
+    component.onDepartmentChange({ target: { value: 'Engineering' } } as any);
+
+    req = httpMock.expectOne((r) => r.url === '/api/employees');
     expect(req.request.params.get('department')).toBe('Engineering');
-    expect(req.request.params.get('page')).toBe('0');
     req.flush(mockPageResponse);
   });
 

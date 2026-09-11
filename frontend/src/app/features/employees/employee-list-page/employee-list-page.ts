@@ -1,11 +1,13 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
+import { Subject, EMPTY, catchError, debounceTime, distinctUntilChanged, switchMap, tap } from 'rxjs';
 import { PageHeader } from '../../../shared/components/page-header/page-header';
 import { EmptyState } from '../../../shared/components/empty-state/empty-state';
 import { LoadingState } from '../../../shared/components/loading-state/loading-state';
 import { Modal } from '../../../shared/components/modal/modal';
 import { EmployeeForm } from '../components/employee-form/employee-form';
-import { Employee, EmployeeResponse } from '../models/employee.model';
+import { Employee, EmployeeResponse, PageResponse } from '../models/employee.model';
 import { EmployeeService } from '../services/employee.service';
 
 @Component({
@@ -17,6 +19,9 @@ import { EmployeeService } from '../services/employee.service';
 })
 export class EmployeeListPage implements OnInit {
   private readonly employeeService = inject(EmployeeService);
+  private readonly destroyRef = inject(DestroyRef);
+
+  private readonly searchSubject = new Subject<string>();
 
   // Filter signals
   readonly searchQuery = signal('');
@@ -66,6 +71,35 @@ export class EmployeeListPage implements OnInit {
     return `Showing ${start}–${end} of ${total} employees`;
   });
 
+  constructor() {
+    this.searchSubject.pipe(
+      debounceTime(300),
+      distinctUntilChanged(),
+      tap(() => {
+        this.isLoading.set(true);
+        this.errorMessage.set(null);
+      }),
+      switchMap((query) => {
+        const apiPage = Math.max(0, this.currentPage() - 1);
+        return this.employeeService.getEmployees({
+          search: query.trim() || undefined,
+          country: this.selectedCountry() || undefined,
+          department: this.selectedDepartment() || undefined,
+          page: apiPage,
+          size: this.pageSize()
+        }).pipe(
+          catchError((err) => {
+            this.handleEmployeeLoadError(err);
+            return EMPTY;
+          })
+        );
+      }),
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe((response) => {
+      this.handleEmployeeResponse(response);
+    });
+  }
+
   ngOnInit() {
     this.loadEmployees();
   }
@@ -83,27 +117,31 @@ export class EmployeeListPage implements OnInit {
       page: apiPage,
       size: this.pageSize()
     }).subscribe({
-      next: (response) => {
-        this.displayedEmployees.set(response.content || []);
-        this.totalItems.set(response.totalElements ?? 0);
-        this.totalPages.set(response.totalPages || 1);
-        this.isLoading.set(false);
-      },
-      error: (err) => {
-        this.displayedEmployees.set([]);
-        this.totalItems.set(0);
-        this.totalPages.set(1);
-        this.isLoading.set(false);
-        this.errorMessage.set(err?.error?.message || 'Failed to load employee directory.');
-      }
+      next: (response) => this.handleEmployeeResponse(response),
+      error: (err) => this.handleEmployeeLoadError(err)
     });
+  }
+
+  private handleEmployeeResponse(response: PageResponse<EmployeeResponse>) {
+    this.displayedEmployees.set(response.content || []);
+    this.totalItems.set(response.totalElements ?? 0);
+    this.totalPages.set(response.totalPages || 1);
+    this.isLoading.set(false);
+  }
+
+  private handleEmployeeLoadError(err: any) {
+    this.displayedEmployees.set([]);
+    this.totalItems.set(0);
+    this.totalPages.set(1);
+    this.isLoading.set(false);
+    this.errorMessage.set(err?.error?.message || 'Failed to load employee directory.');
   }
 
   onSearchChange(event: Event) {
     const value = (event.target as HTMLInputElement).value;
     this.searchQuery.set(value);
     this.currentPage.set(1);
-    this.loadEmployees();
+    this.searchSubject.next(value);
   }
 
   onCountryChange(event: Event) {
