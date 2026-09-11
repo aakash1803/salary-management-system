@@ -1,7 +1,22 @@
-import { Component } from '@angular/core';
+import { Component, OnInit, inject, signal, computed } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
 import { PageHeader } from '../../../shared/components/page-header/page-header';
-import { MOCK_EMPLOYEES } from '../../employees/data/mock-employees';
-import { PayrollSummary, SalaryBand } from '../../employees/models/employee.model';
+import { DashboardService } from '../services/dashboard.service';
+import {
+  DashboardResponse,
+  SalaryMetrics,
+  SalaryDistributionByCurrency
+} from '../models/dashboard.model';
+
+const COUNTRY_FLAGS: Record<string, string> = {
+  'Canada': '🇨🇦',
+  'France': '🇫🇷',
+  'Germany': '🇩🇪',
+  'India': '🇮🇳',
+  'Japan': '🇯🇵',
+  'United Kingdom': '🇬🇧',
+  'United States': '🇺🇸',
+};
 
 @Component({
   selector: 'app-dashboard-page',
@@ -10,44 +25,103 @@ import { PayrollSummary, SalaryBand } from '../../employees/models/employee.mode
   templateUrl: './dashboard-page.html',
   styleUrl: './dashboard-page.scss'
 })
-export class DashboardPage {
-  readonly employees = MOCK_EMPLOYEES;
+export class DashboardPage implements OnInit {
+  private readonly dashboardService = inject(DashboardService);
 
-  readonly totalEmployeesCount = 148;
-  readonly averageSalaryFormatted = '$84,250';
-  readonly minSalaryFormatted = '$30,000';
-  readonly maxSalaryFormatted = '$195,000';
+  readonly loading = signal<boolean>(true);
+  readonly error = signal<string | null>(null);
+  readonly dashboard = signal<DashboardResponse | null>(null);
+  readonly selectedCurrency = signal<string>('USD');
 
-  readonly countryDistribution = [
-    { country: 'United States', count: 52, percentage: 35, flag: '🇺🇸' },
-    { country: 'Germany', count: 30, percentage: 20, flag: '🇩🇪' },
-    { country: 'United Kingdom', count: 26, percentage: 18, flag: '🇬🇧' },
-    { country: 'India', count: 22, percentage: 15, flag: '🇮🇳' },
-    { country: 'Japan', count: 18, percentage: 12, flag: '🇯🇵' },
-  ];
+  readonly availableCurrencies = computed(() => {
+    const data = this.dashboard();
+    if (!data) return [];
+    const currencies = new Set<string>();
+    data.salaryMetricsByCurrency?.forEach(m => currencies.add(m.currency));
+    data.salaryDistribution?.forEach(d => currencies.add(d.currency));
+    return Array.from(currencies);
+  });
 
-  readonly salaryBands: SalaryBand[] = [
-    { label: 'Under 30,000', min: 0, max: 29999.99, count: 12, percentage: 8 },
-    { label: '30,000 - 59,999.99', min: 30000, max: 59999.99, count: 34, percentage: 23 },
-    { label: '60,000 - 99,999.99', min: 60000, max: 99999.99, count: 58, percentage: 39 },
-    { label: '100,000 - 149,999.99', min: 100000, max: 149999.99, count: 32, percentage: 22 },
-    { label: '150,000 and above', min: 150000, max: Infinity, count: 12, percentage: 8 },
-  ];
+  readonly currentMetrics = computed<SalaryMetrics | null>(() => {
+    const data = this.dashboard();
+    if (!data || !data.salaryMetricsByCurrency?.length) return null;
+    const curr = this.selectedCurrency();
+    return data.salaryMetricsByCurrency.find(m => m.currency === curr) ?? null;
+  });
 
-  readonly payrollSummaries: PayrollSummary[] = [
-    { country: 'United States', currency: 'USD', employeeCount: 52, totalPayroll: 6188000, averageSalary: 119000 },
-    { country: 'Germany', currency: 'EUR', employeeCount: 30, totalPayroll: 2430000, averageSalary: 81000 },
-    { country: 'United Kingdom', currency: 'GBP', employeeCount: 26, totalPayroll: 1976000, averageSalary: 76000 },
-    { country: 'Canada', currency: 'CAD', employeeCount: 18, totalPayroll: 1530000, averageSalary: 85000 },
-    { country: 'India', currency: 'INR', employeeCount: 22, totalPayroll: 55000000, averageSalary: 2500000 },
-    { country: 'Japan', currency: 'JPY', employeeCount: 18, totalPayroll: 153000000, averageSalary: 8500000 },
-  ];
+  readonly currentDistribution = computed<SalaryDistributionByCurrency | null>(() => {
+    const data = this.dashboard();
+    if (!data || !data.salaryDistribution?.length) return null;
+    const curr = this.selectedCurrency();
+    return data.salaryDistribution.find(d => d.currency === curr) ?? null;
+  });
 
-  formatCurrency(amount: number, currency: string): string {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: currency,
-      maximumFractionDigits: 0
-    }).format(amount);
+  readonly currentDistributionTotal = computed<number>(() => {
+    const dist = this.currentDistribution();
+    if (!dist) return 0;
+    return dist.bands.reduce((sum, b) => sum + b.employeeCount, 0);
+  });
+
+  ngOnInit(): void {
+    this.loadDashboard();
+  }
+
+  loadDashboard(): void {
+    this.loading.set(true);
+    this.error.set(null);
+
+    this.dashboardService.getDashboard().subscribe({
+      next: (data) => {
+        this.dashboard.set(data);
+        this.loading.set(false);
+        if (data.salaryMetricsByCurrency?.length > 0) {
+          const firstCurr = data.salaryMetricsByCurrency[0].currency;
+          if (!data.salaryMetricsByCurrency.some(m => m.currency === this.selectedCurrency())) {
+            this.selectedCurrency.set(firstCurr);
+          }
+        }
+      },
+      error: (_err: HttpErrorResponse) => {
+        this.loading.set(false);
+        this.error.set('Failed to load dashboard data. Please try again.');
+      }
+    });
+  }
+
+  onCurrencyChange(event: Event): void {
+    const select = event.target as HTMLSelectElement;
+    if (select && select.value) {
+      this.selectedCurrency.set(select.value);
+    }
+  }
+
+  getCountryFlag(country: string): string {
+    return COUNTRY_FLAGS[country] || '🌐';
+  }
+
+  calculateCountryPercentage(count: number): number {
+    const total = this.dashboard()?.totalEmployees || 0;
+    if (total === 0) return 0;
+    return Math.round((count / total) * 100);
+  }
+
+  calculateBandPercentage(count: number): number {
+    const total = this.currentDistributionTotal();
+    if (total === 0) return 0;
+    return Math.round((count / total) * 100);
+  }
+
+  formatCurrency(amount: number | null | undefined, currency?: string): string {
+    if (amount == null) return 'N/A';
+    const curr = currency || this.selectedCurrency() || 'USD';
+    try {
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: curr,
+        maximumFractionDigits: 0
+      }).format(amount);
+    } catch {
+      return `${curr} ${amount.toLocaleString()}`;
+    }
   }
 }
