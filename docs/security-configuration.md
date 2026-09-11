@@ -1,85 +1,65 @@
 # Security Configuration
 
-This document lists the configuration values the authentication vertical slice depends on,
-where they live, and how to generate your own for any environment beyond local development.
-It is a companion to the authentication flow already described in `architecture.md` section 5 -
-this file is the concrete "how to configure it" reference; `architecture.md` remains the
-conceptual description.
+This document describes the authentication model, security configuration properties, JWT cookie transport, CORS setup, and CSRF decisions for the Salary Management System.
 
-## Configuration values
+---
 
-All four values are read from `backend/src/main/resources/application.properties`, and every
-one can be overridden by an environment variable (Spring Boot's standard relaxed binding):
+## 1. Authentication Model & Architecture
 
-| Property                                  | Environment variable                        | Purpose                                                        |
-|--------------------------------------------|----------------------------------------------|------------------------------------------------------------------|
-| `app.security.hr-manager.username`          | `APP_SECURITY_HR_MANAGER_USERNAME`            | The single HR Manager account's login username.                  |
-| `app.security.hr-manager.password-hash`     | `APP_SECURITY_HR_MANAGER_PASSWORD_HASH`       | BCrypt hash of that account's password. Never the plaintext.     |
-| `app.security.jwt.secret`                   | `APP_SECURITY_JWT_SECRET`                     | Raw key material used to sign/verify JWTs (HMAC).                |
-| `app.security.jwt.expiration-minutes`       | `APP_SECURITY_JWT_EXPIRATION_MINUTES`         | Token lifetime in minutes. Optional, defaults to `60`.           |
+- **Single HR Manager Account**: The application configures a single administrative account (`ROLE_HR_MANAGER`) via environment variables/properties rather than a complex multi-tenant user table.
+- **Authentication Flow**:
+  1. Login (`POST /api/auth/login`) with username and password.
+  2. Backend validates configured HR Manager credentials.
+  3. Backend creates a signed HMAC-SHA256 JWT.
+  4. Backend sets the JWT in an `HttpOnly`, `SameSite=Lax` `access_token` cookie.
+  5. Browser automatically sends the cookie on subsequent API requests (`withCredentials: true`).
+  6. Backend validates the JWT before serving protected resources.
+- **HttpOnly Cookie Transport**: An HttpOnly cookie prevents client-side JavaScript from directly reading the JWT, reducing the risk of token exfiltration through client-side token access. The token is never stored in `localStorage`, `sessionStorage`, or JavaScript-accessible cookies.
 
-## Dev-only defaults
+---
 
-`application.properties` (both `src/main` and `src/test`) ships with placeholder values so the
-project builds and runs out of the box locally:
+## 2. Security Configuration Properties
 
-- Username: `hr.manager`
-- Password: `changeme123!` (only its BCrypt hash is committed, not the plaintext)
-- JWT secret: a randomly generated 64-character string (not derived from anything secret)
+All security settings are configured in `application.properties` and overridable via environment variables:
 
-**These are not real secrets and must never be used outside local development.** Override all
-three via environment variables for any shared, staging, or production deployment.
+| Property | Environment Variable | Purpose | Default / Example |
+| :--- | :--- | :--- | :--- |
+| `app.security.hr-manager.username` | `APP_SECURITY_HR_MANAGER_USERNAME` | Login username | `hr.manager` |
+| `app.security.hr-manager.password-hash` | `APP_SECURITY_HR_MANAGER_PASSWORD_HASH` | BCrypt password hash | Hash for `changeme123!` |
+| `app.security.jwt.secret` | `APP_SECURITY_JWT_SECRET` | Raw key material for HMAC-SHA256 (>=256 bits) | Configured secret |
+| `app.security.jwt.expiration-minutes` | `APP_SECURITY_JWT_EXPIRATION_MINUTES` | Token lifetime in minutes | `60` |
+| `app.security.jwt.cookie-name` | `APP_SECURITY_JWT_COOKIE_NAME` | Name of HttpOnly cookie | `access_token` |
+| `app.security.jwt.cookie-secure` | `APP_SECURITY_JWT_COOKIE_SECURE` | Set `Secure` flag on cookie | `false` (dev), `true` (prod HTTPS) |
+| `app.security.cors.allowed-origin` | `APP_SECURITY_CORS_ALLOWED_ORIGIN` | Allowed origin for credentialed CORS | `http://localhost:4200` or `http://localhost` |
 
-## Generating your own password hash
+### Changing Credentials & Production Guidance
+- **Development Credentials**: The documented username `hr.manager` and password `changeme123!` are checked into source control for local development/demo convenience only. Real production credentials and signing secrets must never be committed to source control.
+- **Generating BCrypt Hashes**: Password hashes must be created using standard BCrypt implementations (e.g. Spring Security's `BCryptPasswordEncoder` or standard BCrypt CLI tools) and set via `APP_SECURITY_HR_MANAGER_PASSWORD_HASH`.
 
-The password hash must be a BCrypt hash (Spring Security's `BCryptPasswordEncoder` accepts the
-`$2a$`/`$2b$`/`$2y$` variants interchangeably). Any correct BCrypt implementation works; for
-example, in a `jshell` session on this project's classpath:
+---
 
-```
-jshell> import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
-jshell> new BCryptPasswordEncoder().encode("your-new-password")
-```
+## 3. Endpoints & API Contract
 
-Or with Python's `bcrypt` package:
+- `POST /api/auth/login` — Public. Validates credentials, sets `access_token` HttpOnly cookie, and returns `{ "username": "...", "expiresInSeconds": 3600 }`. The raw JWT is never exposed in the response body.
+- `POST /api/auth/logout` — Public. Clears the `access_token` cookie by returning `Max-Age=0` and 200 OK.
+- `GET /api/auth/me` — Protected. Returns `{ "username": "hr.manager" }` for Angular route guards to verify active session state.
 
-```python
-import bcrypt
-print(bcrypt.hashpw(b"your-new-password", bcrypt.gensalt(rounds=10)).decode())
-```
+---
 
-Put the resulting hash in `APP_SECURITY_HR_MANAGER_PASSWORD_HASH` (or the property directly for
-local-only use) - never commit a real password's hash to source control.
+## 4. Security Decisions
 
-## Generating your own JWT secret
+### CORS Configuration
+- CORS explicitly permits requests from the single configured origin (`http://localhost` for Docker Compose, `http://localhost:4200` for native Angular dev server).
+- `Access-Control-Allow-Credentials` is set to `true` to allow HttpOnly cookie transmission.
+- Wildcard origins (`*`) are prohibited by Spring Security when credentials are enabled.
 
-Any sufficiently long random string works; the configured secret's raw UTF-8 byte length must be
-at least 32 bytes (256 bits) for `Keys.hmacShaKeyFor` (jjwt) to accept it as an HMAC key - it
-throws at startup otherwise. For example:
+### CSRF Decision
+- CSRF protection is currently disabled as an intentional decision for the current authentication and deployment model, considering:
+  1. `HttpOnly` JWT cookie transport
+  2. Same-origin Nginx deployment topology
+  3. Restricted credentialed CORS
+  4. Absence of state-changing `GET` endpoints
+- *This decision should be revisited if authentication semantics, deployment topology, or allowed origins change.*
 
-```python
-import secrets
-print(secrets.token_urlsafe(48))
-```
-
-## Design notes
-
-- **Single configured HR Manager account, not a database-backed user store.** The product has
-  one primary user role; a `User` entity/repository/registration flow would be unused complexity
-  the requirements do not call for.
-- **Stateless JWT, no sessions, no HTTP Basic.** `SecurityConfig` sets
-  `SessionCreationPolicy.STATELESS` and explicitly disables `httpBasic`/`formLogin`/CSRF (CSRF
-  protection is for cookie/session-based auth, which this API does not use).
-- **Login failures are generic.** `AuthService.login` always evaluates both the username and
-  password checks, and always throws the same `BadCredentialsException` with the same message,
-  regardless of which check failed - this avoids revealing whether a given username exists via
-  response timing or message content.
-- **Invalid and missing JWTs are handled identically.** `JwtAuthenticationFilter` never sets the
-  security context for a missing, malformed, invalid, or expired token; `JwtAuthenticationEntryPoint`
-  then rejects the resulting unauthenticated request with a uniform 401 JSON body (same shape as
-  the rest of the API's error responses). Neither ever logs the raw token.
-- **`SecurityConfig.securityFilterChain(...)` is `@ConditionalOnWebApplication(type = SERVLET)`.**
-  Some of this project's existing persistence tests run with
-  `@SpringBootTest(webEnvironment = WebEnvironment.NONE)` (a non-web `ApplicationContext`), which
-  cannot supply the `HttpSecurity` bean this method needs. The `passwordEncoder()` bean in the
-  same class is intentionally left unconditional, since `AuthService` needs it in every context.
+### Container Security
+- Backend container runs under non-root user `spring` (UID 1000).

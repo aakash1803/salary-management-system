@@ -1,87 +1,45 @@
 # Salary Management System — Domain Model
 
-## Employee
+## 1. Employee Entity
 
-Represents a person employed by the organization.
+Represents an employee within the organization.
 
-Suggested fields:
+### Fields
+- `id` — Surrogate primary key (`Long`, auto-generated identity).
+- `employeeNumber` — Unique business identifier for the employee (e.g., `EMP-00001`).
+- `firstName` — Employee's first name.
+- `lastName` — Employee's last name.
+- `email` — Employee's work email address.
+- `country` — Employee's primary country of employment.
+- `department` — Department assignment (e.g., `Engineering`, `HR`, `Finance`).
+- `createdAt` — Record creation timestamp (`Instant`).
+- `updatedAt` — Record modification timestamp (`Instant`).
 
-- `id` — surrogate primary key.
-- `employeeNumber` — unique business identifier for the employee.
-- `firstName`
-- `lastName`
-- `email`
-- `country`
-- `department`
-- `createdAt`
-- `updatedAt`
+---
 
-`employeeNumber` must be unique across all employees.
+## 2. SalaryRecord Entity
 
-No additional employee fields (e.g., job title, manager, employment status) are introduced beyond what the requirements specify.
+Represents a historical or current salary entry for an employee, effective from a specified date.
 
-## SalaryRecord
+### Fields
+- `id` — Surrogate primary key (`Long`, auto-generated identity).
+- `employee` — Many-To-One foreign key relationship referencing `Employee` (`employee_id`).
+- `amount` — Monetary salary amount (`BigDecimal`, positive value with scale 2).
+- `currency` — Three-letter ISO currency code (e.g., `USD`, `EUR`, `GBP`).
+- `effectiveFrom` — Effective date from which this salary applies (`LocalDate`).
+- `createdAt` — Record creation timestamp (`Instant`).
 
-Represents a single salary entry for an employee, effective from a given date.
+---
 
-Suggested fields:
-
-- `id` — surrogate primary key.
-- `employee` — the employee this salary record belongs to.
-- `amount` — the salary amount; must represent a positive monetary value.
-- `currency` — the currency of the salary amount.
-- `effectiveFrom` — the date from which this salary amount applies.
-- `createdAt`
-
-A `SalaryRecord` always belongs to exactly one `Employee`. Salary history is preserved by creating a new `SalaryRecord` for every salary change rather than modifying or deleting existing records.
-
-## Relationships
-
-```
-Employee 1 → many SalaryRecord
-```
-
-An `Employee` can have multiple `SalaryRecord`s over time, representing the history of salary changes.
-
-The employee's **current salary** is a derived value: it is the `SalaryRecord` with the latest applicable `effectiveFrom` date (i.e., the most recent effective date that is not in the future) for that employee. It is computed by querying salary records ordered by `effectiveFrom`, not stored as a duplicated field on `Employee`. No separate `CurrentSalary` entity is introduced.
-
-## Domain Rules
-
-1. Employee number must be unique.
-2. Salary amount must be positive.
-3. Salary history must be preserved — salary changes are recorded as new `SalaryRecord`s, never as overwrites of existing records.
-4. A salary record must belong to an existing employee.
-5. Salary effective date (`effectiveFrom`) is required.
-6. Currency is required.
-7. Employee required fields must be validated (e.g., employee number, name fields present and well-formed).
-8. Salary records should be ordered by effective date when salary history is retrieved.
-
-## Database Considerations
-
-Key persistence relationships:
-
-- `salary_record.employee_id` is a foreign key referencing `employee.id`, enforcing that every salary record belongs to an existing employee.
-- Deleting an employee's related salary history is not addressed here, as employee deletion is not a specified requirement.
-
-Potential indexes, each justified by a specific query/use case:
-
-- `employee.employee_number` (unique index) — supports uniqueness enforcement and fast lookup/search by employee number.
-- `employee.country` — supports filtering employees by country.
-- `employee.department` — supports filtering employees by department.
-- `salary_record.employee_id` — supports efficiently retrieving an employee's salary history and deriving current salary.
-- `salary_record.effective_from` — supports ordering/filtering salary records by effective date, including finding the latest applicable record.
-
-No additional indexes are proposed beyond those with a clear, current query justification.
-
-## Domain Model Diagram
+## 3. Entity Relationships & Domain Rules
 
 ```mermaid
 erDiagram
-    EMPLOYEE ||--o{ SALARY_RECORD : has
+    EMPLOYEE ||--o{ SALARY_RECORD : "1 to Many (Preserved History)"
 
     EMPLOYEE {
-        long id
-        string employeeNumber
+        long id PK
+        string employeeNumber UK
         string firstName
         string lastName
         string email
@@ -92,11 +50,38 @@ erDiagram
     }
 
     SALARY_RECORD {
-        long id
-        long employeeId
+        long id PK
+        long employeeId FK
         decimal amount
         string currency
         date effectiveFrom
         datetime createdAt
     }
 ```
+
+### Domain Rules
+1. **Unique Employee Number**: `employeeNumber` must be strictly unique across all employee records.
+2. **Positive Salary Amount**: Salary `amount` must be greater than zero.
+3. **Preserved Salary History**: Updating an employee's salary inserts a new `SalaryRecord` entry rather than overwriting or deleting existing entries. `SalaryRecord` fields are immutable once persisted.
+4. **Current Salary Derivation**: An employee's current active salary is defined as the `SalaryRecord` with the latest `effectiveFrom` date that is on or before today (ties broken by `id` descending). Future-dated effective dates are permitted but do not become current until their effective date arrives.
+5. **Bulk Current Salary Retrieval**: To avoid N+1 queries when listing paginated employee records, `SalaryService` obtains employee IDs for the requested page, executes a single bulk repository query (`findByEmployee_IdInAndEffectiveFromLessThanEqualOrderByEmployee_IdAscEffectiveFromDescIdDesc`), orders records by employee and effective date, and selects the active record per employee to map into the response.
+
+---
+
+## 4. Indexing & Database Optimization
+
+The database schema defines the following specific indexes to support searching, filtering, pagination, and history queries across **~10,000 employees and ~20,000 salary records**:
+
+- **Unique Constraint/Index on `employee.employee_number`**: Enforces uniqueness and accelerates search by employee number.
+- **Index `idx_employee_country` on `employee.country`**: Accelerates filtering employees by country.
+- **Index `idx_employee_department` on `employee.department`**: Accelerates filtering employees by department.
+- **Composite Index `idx_salary_record_employee_effective` on `salary_record(employee_id, effective_from)`**: Accelerates history lookups and bulk current-salary queries grouped by employee and ordered by effective date.
+
+---
+
+## 5. Seed Data Specification
+
+The deterministic database seeder populates:
+- **Employees**: Exactly 10,000 employee records with realistic names, emails, departments, and countries.
+- **Salary Records**: Exactly 19,999 historical and current salary entries distributed across the employee base.
+- **Execution**: Triggered explicitly via `docker compose --profile tools run --rm seeder` or `./gradlew seedDatabase`.

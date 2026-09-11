@@ -2,55 +2,62 @@
 
 ## 1. Architecture Overview
 
-The system uses a **modular monolith** architecture: a single deployable Spring Boot application, internally organized into cohesive, feature-oriented modules (auth, employee, salary, dashboard, common), backed by a single Angular frontend.
-
-This is appropriate for the current scale and scope because:
-
-- The organization has approximately 10,000 employees and a single primary user role (HR Manager) — this is a small-to-medium data and load profile that does not require independently scaled services.
-- A single relational database (SQLite) is sufficient; there is no need to partition data or ownership across services.
-- A modular monolith keeps deployment, transactions, and data consistency simple (one process, one database, no distributed transactions or network calls between modules).
-- Module boundaries (auth, employee, salary, dashboard, common) enforce separation of concerns and leave a clear path to extraction later, without the operational cost of microservices up front.
-- It keeps the system easier to build, test, reason about, and maintain with a small team.
-
-High-level flow:
+The system uses a **modular monolith** architecture: a single deployable Spring Boot application, internally organized into cohesive, feature-oriented modules (auth, employee, salary, dashboard, common), backed by an Angular frontend served via an Nginx reverse proxy in a containerized environment.
 
 ```
-Angular frontend
+Browser (HTTP :80)
         |
-        | HTTPS / REST API + HttpOnly JWT Cookie
         v
-Spring Boot backend
+Nginx Frontend Container (:80)
         |
-        +-- Auth module
-        +-- Employee module
-        +-- Salary module
-        +-- Dashboard module
-        +-- Common module
+        | Reverse proxies /api/* calls
+        v
+Spring Boot Backend Container (:8080)
+        |
+        +-- Auth Module (HttpOnly JWT Cookie)
+        +-- Employee Module (Server-side Search & Pagination)
+        +-- Salary Module (Bulk Current Salary Lookup & History)
+        +-- Dashboard Module (SQL Aggregations)
+        +-- Common Module (Global Error Handling & Utilities)
         |
         v
 Spring Data JPA / Hibernate
         |
         v
-SQLite database
+SQLite Database (/app/data/salary-management.db on volume sqlite_data)
 ```
+
+This is appropriate for the system's scale and scope because:
+
+- The organization has **~10,000 employees and ~20,000 salary records** (the deterministic seed contains 10,000 employees and 19,999 salary records) and a single primary user role (HR Manager) — this is a focused data and load profile that does not require independently scaled microservices.
+- A single relational database (SQLite) is sufficient; there is no need to partition data or ownership across services.
+- A modular monolith keeps deployment, transactions, and data consistency simple (one process, one database, no distributed transactions or network calls between modules).
+- Module boundaries (auth, employee, salary, dashboard, common) enforce separation of concerns and leave a clear path to extraction later, without the operational cost of microservices up front.
+- Containerization with Docker Compose and Nginx provides a consistent containerized runtime and deployment setup.
+
+---
 
 ## 2. Technology Stack
 
-- **Java 21** — backend language runtime.
-- **Spring Boot** — application framework (web, dependency injection, configuration).
+- **Java 21** — backend language runtime (Eclipse Temurin).
+- **Spring Boot 4.1.1** — application framework (web, dependency injection, configuration, security).
 - **Spring Data JPA / Hibernate** — ORM and repository-based data access.
-- **SQLite** — relational database for persistence.
-- **Angular** — frontend SPA framework.
+- **SQLite** — embedded relational database persisted to a mounted volume (`sqlite_data`).
+- **Angular 21** — frontend SPA framework.
 - **TypeScript** — frontend language.
-- **JWT (JSON Web Tokens)** — stateless authentication mechanism.
-- **JUnit 5** — backend unit/integration testing framework.
-- **Mockito** — mocking framework for backend tests.
+- **Node.js 22** — frontend build toolchain.
+- **Nginx** — web server serving static Angular production assets and proxying `/api` requests to the backend container.
+- **JWT (JSON Web Tokens)** — stateless authentication mechanism delivered exclusively via `HttpOnly` cookies.
+- **JUnit 5 & Spring Boot Test** — backend unit, integration, and full-system HTTP acceptance testing framework.
+- **Vitest** — frontend unit testing framework.
+- **Docker & Docker Compose** — multi-stage container build and environment orchestration.
+- **GitHub Actions** — CI pipeline for automated backend, frontend, and Docker validation.
 
-No additional technologies (messaging systems, caches, container orchestration, etc.) are introduced beyond what the requirements call for.
+---
 
 ## 3. Backend Architecture
 
-The backend is organized by **feature/module** rather than by technical layer at the top level:
+The backend is organized by **feature/module**:
 
 ```
 auth/
@@ -58,198 +65,145 @@ employee/
 salary/
 dashboard/
 common/
+seed/
 ```
 
-- **auth** — login endpoint, JWT issuance/validation, security configuration.
-- **employee** — employee CRUD, search, filtering, pagination.
-- **salary** — salary record creation, salary history, current-salary derivation.
-- **dashboard** — salary insights and aggregate statistics.
-- **common** — shared components such as exception handling, validation utilities, and common configuration.
+- **auth** — login and logout endpoints, JWT cookie issuance/validation, Spring Security configuration.
+- **employee** — employee CRUD, server-side search, filtering, and pagination.
+- **salary** — salary record creation, salary history, bulk current-salary lookup optimization.
+- **dashboard** — aggregate SQL-based salary insights and statistics.
+- **common** — global exception handling, DTO validation, shared utilities.
+- **seed** — explicit database seeder generating a deterministic dataset of 10,000 employees and 19,999 salary records.
 
-Within each business module, a simple layered flow is used:
+Within each business module, a layered flow is enforced:
 
 ```
 Controller → Service → Repository → Database
 ```
 
-- **Controller** — accepts HTTP requests, validates request shape (via DTOs/bean validation), delegates to the service layer, and maps results to HTTP responses. Contains no business logic.
-- **Service** — contains business logic and orchestrates use cases (e.g., "create a salary record", "compute dashboard statistics"). Enforces domain rules (e.g., positive salary amounts, uniqueness) and coordinates repositories.
-- **Repository** — Spring Data JPA interfaces responsible for data access only (queries, persistence). No business logic.
-- **Database** — SQLite, accessed exclusively through the repository layer.
+- **Controller** — accepts HTTP requests, validates DTOs, delegates to services, and returns HTTP responses.
+- **Service** — orchestrates business logic and domain rules (e.g., positive monetary amounts, uniqueness).
+- **Repository** — Spring Data JPA interfaces responsible for database queries and persistence.
+- **Database** — SQLite database stored on persistent storage.
 
-No additional layers (e.g., separate "manager" or "facade" layers, generic repository abstractions beyond Spring Data, or CQRS-style splitting) are introduced, since they are not needed at this scale.
+---
 
-## 4. Frontend Architecture
+## 4. Frontend & Reverse Proxy Architecture
 
-The Angular application uses a feature-oriented structure:
+### Nginx Reverse Proxy Container
+In containerized environments, Nginx listens on port `80`:
+- Serves built Angular static files from `/usr/share/nginx/html`.
+- Implements single-page application fallback (`try_files $uri $uri/ /index.html`).
+- Proxies `/api/` requests to `http://backend:8080/api/`.
 
+### Angular Application Structure
 ```
 core/
-  auth/
-  guards/
-  interceptors/
-  services/
+  auth/          # Auth state management, login/logout
+  guards/        # Route protection (requires authenticated session)
+  interceptors/  # Error response handling (e.g., 401 redirect)
+  services/      # HTTP clients for backend APIs
 
 shared/
-  components/
-  models/
-  services/
+  components/    # Reusable UI controls (pagination, tables, modals)
+  models/        # Shared TypeScript interfaces
 
 features/
-  auth/
-  dashboard/
-  employees/
-  salary/
+  auth/          # Login screen
+  dashboard/     # Salary insights cards & charts
+  employees/     # Employee list, search, filter, detail, and edit
+  salary/        # Salary history and change recording
 ```
 
-- **Authentication handling** — the `core/auth` area holds the authentication service responsible for login, logout, and tracking the current authentication state.
-- **JWT storage/handling** — the backend sets the JWT in an HttpOnly `access_token` cookie on login. Angular cannot read, decode, or store it (no `localStorage`/`sessionStorage`, no `Authorization` header); the browser sends it automatically because `HttpClient` requests use `withCredentials: true`.
-- **Route guards** — `core/guards` prevents navigation to protected routes (employee, salary, dashboard) unless the user is authenticated, redirecting to login otherwise. Guards cannot read the JWT directly (it is HttpOnly), so they wait for authentication state from `GET /api/auth/me` before deciding.
-- **HTTP interceptor** — `core/interceptors` handles cross-cutting HTTP concerns such as redirecting to login on a 401. It does not attach the JWT; the browser sends the `access_token` cookie automatically.
-- **API services** — `core/services` and `shared/services` contain services responsible for calling backend REST endpoints (employee, salary, dashboard) and returning typed data to components.
-- **Feature components** — `features/` contains one folder per screen/capability (auth, dashboard, employees, salary), each composed of the components needed for that feature (e.g., employee list, employee detail/edit, salary history).
-- **Shared reusable components** — `shared/components` holds presentational components reused across features (e.g., pagination control, table, form controls), and `shared/models` holds TypeScript interfaces/types shared across features.
+### Authentication Handling
+- The backend sets the JWT in an `HttpOnly` `access_token` cookie upon successful authentication.
+- An HttpOnly cookie prevents client-side JavaScript from directly reading the JWT, reducing the risk of token exfiltration through client-side token access (tokens are not stored in `localStorage`, `sessionStorage`, or JavaScript-readable storage).
+- `withCredentials: true` enables cookie transmission on HTTP requests issued by Angular's `HttpClient`.
+- Route guards verify session state via `GET /api/auth/me`.
 
-### Frontend State and Asynchronous Operations
+---
 
-- **Signals** — used for local/shared UI state and derived state.
-- **RxJS** — used for HTTP calls and other asynchronous operations.
-- No state-management library (e.g., NgRx) is introduced.
+## 5. Authentication & Security
 
-This structure separates cross-cutting infrastructure (`core`), reusable UI (`shared`), and screen-specific code (`features`) — practical for a single-role, moderately sized application.
-
-## 5. Authentication and Security
-
-JWT authentication flow:
-
+### Authentication Flow
 ```
-Login
-  → backend validates credentials
-  → JWT generated
-  → backend sets JWT in an HttpOnly access_token cookie
-  → browser stores the cookie (inaccessible to frontend JavaScript)
-  → browser automatically sends the cookie with subsequent requests
-  → backend validates JWT from the cookie
-  → protected resources become accessible
+Login (POST /api/auth/login)
+  → Backend validates configured HR Manager credentials
+  → Backend creates signed JWT
+  → Backend sets JWT in HttpOnly access_token cookie
+  → Browser automatically sends the cookie on subsequent API requests
+  → Backend validates the JWT
 ```
 
-- The HR Manager submits credentials via the login screen.
-- The backend validates the credentials and, on success, issues a signed JWT.
-- The JWT is set as an HttpOnly `access_token` cookie; it is never returned in the response body.
-- The browser sends the cookie automatically on later requests (`withCredentials: true`), and the backend validates it before allowing access.
-- The frontend restores authentication state via `GET /api/auth/me`, since it cannot read the cookie directly.
-- Logout clears the cookie on the backend.
-- All employee, salary, and dashboard endpoints require a valid JWT; unauthenticated requests are rejected.
+- **Cookie Parameters**:
+  - `HttpOnly = true` (prevents client-side JavaScript access).
+  - `SameSite = Lax` (mitigates cross-site request forgery).
+  - `Secure` configurable (`false` for local HTTP, `true` for production HTTPS).
+  - `Path = /`.
+- **CORS**: Restricted to the configured frontend origin with credentials enabled. No wildcard origins.
+- **CSRF Decision**: CSRF protection is currently disabled as an intentional decision for the current authentication and deployment model, considering:
+  1. `HttpOnly` JWT cookie transport
+  2. Same-origin Nginx deployment topology
+  3. Restricted credentialed CORS
+  4. Absence of state-changing `GET` endpoints
+  *This decision should be revisited if authentication semantics, deployment topology, or allowed origins change.*
 
-Because there is a single primary user role (HR Manager), authentication is intentionally simple: it verifies *who* the caller is, without a role/permission hierarchy, resource-level authorization matrix, or multi-tenancy concerns. No additional roles or permission levels are introduced beyond what the requirements specify.
+---
 
-### Cookie Configuration
+## 6. Database & Seeding Strategy
 
-The `access_token` cookie is configured as:
+- **SQLite Database**: Stored at `/app/data/salary-management.db`.
+- **Persistent Volume**: Docker Compose mounts `sqlite_data` to `/app/data` to ensure container restarts do not delete application data.
+- **Explicit Seeder**: Populates **10,000 employees** and **19,999 salary records** deterministically.
+- **No Automatic Startup Seeding**: Seeding is intentionally decoupled from application startup to avoid overwriting persistent data when backend containers restart. Seeding is triggered explicitly via:
+  ```bash
+  docker compose --profile tools run --rm seeder
+  ```
+  or locally via `./gradlew seedDatabase`.
 
-- `HttpOnly=true`.
-- `SameSite=Lax`.
-- `Secure` — configurable: `false` for local HTTP development, `true` for HTTPS deployment.
-- `Path=/`.
-- `Max-Age` aligned with the configured JWT expiration.
-- No `Domain` is configured.
+---
 
-### CORS
+## 7. Performance & Optimization Strategy
 
-CORS is restricted to the configured frontend origin, with credentials explicitly allowed. Wildcard origins are not used.
+1. **Server-Side Pagination & Search**: Employee list endpoints handle pagination, department/country filters, and text search at the database query level for ~10,000 employees and ~20,000 salary records.
+2. **Bulk Current Salary Retrieval**: Solves potential N+1 query overhead when rendering paginated employee lists. The implementation:
+   - Obtains the employee IDs for the requested page
+   - Executes one bulk repository query for applicable salary records (`findByEmployee_IdInAndEffectiveFromLessThanEqualOrderByEmployee_IdAscEffectiveFromDescIdDesc`)
+   - Orders records by employee and effective date
+   - Selects the current record per employee in `SalaryService`
+   - Maps salary/currency into the list response
+3. **Database Aggregations**: Dashboard insights (min, max, average salaries, country/currency distributions) execute SQL aggregate functions (`AVG`, `MIN`, `MAX`, `COUNT`, `GROUP BY`) directly in SQLite.
+4. **Database Indexing**: Unique index on `employee.employee_number`, indexes on `employee.country`, `employee.department`, `salary_record.employee_id`, and `salary_record.effective_from`.
 
-### CSRF
+---
 
-CSRF protection is currently disabled as a deliberate scope decision. The current design uses `SameSite=Lax` cookies, which provides browser-level CSRF mitigation for the supported cross-site request scenarios, and the API does not expose authenticated state-changing GET endpoints. CORS is separately restricted to the configured trusted frontend origin. If the deployment changes to cross-site cookies (e.g., `SameSite=None`) or the authenticated browser-facing surface expands, explicit CSRF protection should be introduced.
+## 8. Testing Architecture
 
-## 6. Data Access
+The project employs a lightweight, highly reliable testing strategy:
 
-- **Spring Data JPA / Hibernate** is used as the ORM, mapping entities (Employee, SalaryRecord) to SQLite tables.
-- **Repository-based data access**: each business module exposes Spring Data JPA repository interfaces; all persistence access goes through repositories rather than raw SQL or direct JDBC calls, using JPA-generated or `@Query`-defined parameterized queries.
-- **Entity relationships**: Employee to SalaryRecord is a one-to-many relationship (see `domain-model.md`), modeled via standard JPA associations.
-- **Transaction boundaries**: transactions are scoped at the service-method level (e.g., a single `@Transactional` service method handles "add salary record" as one unit of work), keeping each use case atomic and consistent.
-- **SQLite persistence**: SQLite is used as a single embedded/file-based relational database, accessed through the standard JPA/Hibernate JDBC driver integration, suitable for the read/write profile of ~10,000 employees and their salary history.
+1. **Backend Unit & Integration Tests**: JUnit 5 & Mockito test controllers, services, repositories, and security filters.
+2. **Full-System HTTP Acceptance Test**: `FullSystemAcceptanceTest.java` uses `@SpringBootTest(webEnvironment = RANDOM_PORT)` to verify real HTTP user journeys (unauthenticated access rejection, login, dashboard retrieval, employee creation, employee search by `EMP-ACC-001`, employee detail lookup, salary creation, current salary derivation, and salary history preservation).
+3. **Frontend Unit Tests**: Vitest runs isolated Angular component and service unit tests.
+4. **No E2E Browser Automation Framework**: Heavy browser automation frameworks (Playwright, Cypress, Selenium) were deliberately omitted. Full-system HTTP tests combined with Vitest unit tests provide faster, deterministic execution without browser flakiness.
 
-## 7. API Design Principles
+---
 
-- APIs use standard RESTful HTTP methods (GET, POST, PUT/PATCH) mapped to resource-oriented endpoints (e.g., employees, salary records).
-- Controllers expose and accept **DTOs**, not persistence entities directly, keeping the API contract independent of the database schema.
-- Incoming requests are validated (e.g., via bean validation) before reaching business logic.
-- Endpoints return meaningful HTTP status codes (e.g., 200/201 for success, 400 for validation errors, 401/403 for authentication/authorization failures, 404 for missing resources).
-- Error responses follow a consistent, predictable structure across the API.
-- Employee list endpoints support pagination and filtering (by country, department) and search (by name or employee number) as query parameters.
+## 9. CI Workflow (GitHub Actions)
 
-The full API specification (exact endpoints, request/response schemas) is intentionally not defined here and will be documented separately.
+The workflow defined in `.github/workflows/ci.yml` runs on `push` to `main` and `pull_request` targeting `main`:
 
-## 8. Performance Considerations
+1. **Backend Job**: Java 21 setup (Temurin), Gradle cache, runs `./gradlew build --no-daemon` (compiles and runs unit/integration/acceptance tests).
+2. **Frontend Job**: Node 22 setup, NPM cache, runs `npm ci`, `npm test -- --watch=false`, and `npm run build`.
+3. **Docker Job**: Validates `docker compose config` and executes `docker compose build`.
+4. **Seeding in CI**: Database seeding is intentionally excluded from CI to maintain fast build times.
 
-To support approximately 10,000 employees efficiently:
+---
 
-- Employee listing uses **server-side pagination** rather than returning full result sets.
-- Searching and filtering (by name, employee number, country, department) are performed at the **database level** via JPA/Hibernate queries, not in application memory.
-- **Database indexes** are used on frequently queried fields (see `domain-model.md`) to keep search/filter/lookup performant.
-- **Dashboard/insight statistics** (counts, min/max/average salary, distributions) are computed via database-level aggregation queries rather than loading all records into the application and computing in memory.
-- The application avoids loading the full employee or salary dataset into memory at once.
-- Entity relationships and queries are designed to avoid unnecessary N+1 query patterns (e.g., using appropriate fetch strategies/joins when retrieving related data such as an employee's latest salary record).
-- Seed data generation is deterministic and reproducible, so environments and tests behave consistently.
+## 10. Architectural Trade-offs Summary
 
-No specific benchmark numbers or SLAs are defined, since none were specified in the requirements.
-
-## 9. Error Handling
-
-Centralized exception handling is implemented using Spring's exception-handling mechanisms (a global exception handler), covering:
-
-- **Validation errors** — invalid request payloads (e.g., a non-positive salary amount) return a 400-level response describing what was invalid.
-- **Resource-not-found errors** — requests referencing a non-existent employee or salary record return a 404-level response.
-- **Business-rule violations** — e.g., attempting to create a salary record without a valid effective date or currency return an appropriate 400-level response with a clear message.
-- **Authentication/authorization errors** — missing, invalid, or expired JWTs return 401; disallowed access returns 403.
-- **Unexpected server errors** — unhandled failures return a generic 500-level response.
-
-All error responses follow a consistent shape and do not expose internal details (stack traces, SQL, internal class names) to the client.
-
-## 10. Maintainability
-
-The architecture supports maintainability through:
-
-- **Separation of responsibilities** — each module owns a distinct area (auth, employee, salary, dashboard), and each layer within a module (controller/service/repository) has a single, clear responsibility.
-- **Testability** — the layered structure allows services to be unit-tested with mocked repositories (via Mockito/JUnit 5), and controllers to be tested independently of business logic.
-- **Readability** — a consistent, predictable structure (both backend modules and frontend feature folders) makes it straightforward to locate and understand code for a given feature.
-- **Feature isolation** — changes to one module (e.g., dashboard insights) are unlikely to require changes in unrelated modules (e.g., auth).
-- **Future extension** — new features can be added as new modules/feature folders following the same conventions; if the system later needs to scale beyond a single deployable unit, module boundaries provide a natural seam for extraction.
-
-Object-oriented design and SOLID principles guide implementation (e.g., single-responsibility services, dependency injection for testability) as general engineering practice, not as justification for additional abstractions, patterns, or indirection beyond what the system currently needs.
-
-## 11. Architectural Trade-offs
-
-- **Modular monolith instead of microservices** — chosen because the scale (~10,000 employees, one primary user role) does not justify the operational complexity of independently deployed services, network calls between modules, or distributed data consistency. A single deployable unit is simpler to build, test, and operate.
-- **SQLite instead of a separately managed database server** — chosen for simplicity of deployment (no separate database server/process to provision and manage) given the requirements; it is adequate for the expected data volume (~10,000 employees and their salary history).
-- **JPA/Hibernate instead of handwritten persistence** — reduces boilerplate for standard CRUD and query needs while still allowing custom queries where required; avoids maintaining hand-rolled SQL/mapping code for straightforward entity persistence.
-- **Server-side pagination/filtering instead of client-side** — keeps response payloads small and avoids transferring/holding the full ~10,000-employee dataset in the browser or application memory.
-- **JWT for stateless authentication** — avoids server-side session storage, and fits a system with one user role and simple authentication needs. An HttpOnly cookie keeps the token safe from JavaScript, at the cost of extra CORS, `SameSite`, and CSRF considerations.
-
-## 12. Architecture Diagram
-
-```mermaid
-flowchart TD
-    FE["Angular Frontend"]
-    API["Spring Boot Backend (REST API)"]
-    AUTH["Auth Module"]
-    EMP["Employee Module"]
-    SAL["Salary Module"]
-    DASH["Dashboard Module"]
-    COMMON["Common Module"]
-    JPA["Spring Data JPA / Hibernate"]
-    DB[("SQLite Database")]
-
-    FE -->|"HTTPS / REST API + HttpOnly JWT Cookie"| API
-    API --> AUTH
-    API --> EMP
-    API --> SAL
-    API --> DASH
-    API --> COMMON
-    AUTH --> JPA
-    EMP --> JPA
-    SAL --> JPA
-    DASH --> JPA
-    JPA --> DB
-```
+- **Modular Monolith vs. Microservices**: Monolith selected for operational simplicity, single-database consistency, and low latency at ~10,000 employees and ~20,000 salary records scale.
+- **SQLite vs. Dedicated Database Server**: SQLite selected to eliminate external database infrastructure requirements for this assessment size.
+- **HttpOnly Cookie vs. LocalStorage JWT**: HttpOnly cookies prevent client-side JavaScript from directly reading the JWT, reducing the risk of token exfiltration through client-side token access.
+- **Explicit Seeder vs. Startup Seeding**: Explicit container trigger prevents data loss on container restarts.
+- **Multi-Currency Statistics**: Salary statistics are grouped by currency without applying synthetic cross-currency conversion, preserving audit accuracy.
+- **Full-System HTTP Acceptance Test vs. Playwright/Cypress**: HTTP acceptance tests verify real API contracts and security headers without browser automation overhead.
