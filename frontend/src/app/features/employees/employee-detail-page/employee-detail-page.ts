@@ -52,7 +52,7 @@ import { MockEmployeeService } from '../services/mock-employee.service';
     @if (isSalaryModalOpen()) {
       <app-modal title="Add Salary Record" (closeModal)="closeSalaryModal()">
         <app-salary-form
-          [defaultCurrency]="employee().currency"
+          [defaultCurrency]="employee().currency || 'USD'"
           (saveForm)="onSaveSalaryRecord($event)"
           (cancelForm)="closeSalaryModal()"
         />
@@ -97,16 +97,27 @@ import { MockEmployeeService } from '../services/mock-employee.service';
       <div class="card salary-highlight-card">
         <div class="card-header">
           <h2 class="card-title">Current Compensation</h2>
-          <span class="badge badge-success">Active Rate</span>
+          @if (employee().currentSalary !== undefined) {
+            <span class="badge badge-success">Active Rate</span>
+          } @else {
+            <span class="badge badge-secondary">No History</span>
+          }
         </div>
         <div class="salary-display">
-          <div class="salary-amount">
-            {{ formatSalary(employee().currentSalary, employee().currency) }}
-          </div>
-          <div class="salary-meta">
-            <span class="badge badge-info">{{ employee().currency }}</span>
-            <span class="meta-label">Effective from {{ formatDate(employee().effectiveFrom) }}</span>
-          </div>
+          @if (employee().currentSalary !== undefined && employee().currency) {
+            <div class="salary-amount">
+              {{ formatSalary(employee().currentSalary, employee().currency) }}
+            </div>
+            <div class="salary-meta">
+              <span class="badge badge-info">{{ employee().currency }}</span>
+              <span class="meta-label">Effective from {{ formatDate(employee().effectiveFrom) }}</span>
+            </div>
+          } @else {
+            <div class="salary-amount text-muted-amount">No Active Salary</div>
+            <div class="salary-meta">
+              <span class="meta-label">Click "Add Salary Record" to record initial salary history.</span>
+            </div>
+          }
         </div>
       </div>
     </div>
@@ -132,28 +143,36 @@ import { MockEmployeeService } from '../services/mock-employee.service';
             </tr>
           </thead>
           <tbody>
-            @for (record of employee().salaryHistory; track record.id; let idx = $index) {
-              <tr [class.current-record-row]="record.amount === employee().currentSalary && record.effectiveFrom === employee().effectiveFrom">
-                <td>
-                  @if (record.amount === employee().currentSalary && record.effectiveFrom === employee().effectiveFrom) {
-                    <span class="badge badge-success">Current</span>
-                  } @else {
-                    <span class="badge badge-secondary">Historical</span>
-                  }
-                </td>
-                <td>
-                  <strong>{{ formatDate(record.effectiveFrom) }}</strong>
-                </td>
-                <td class="font-bold">
-                  {{ formatSalary(record.amount, record.currency) }}
-                </td>
-                <td>
-                  <span class="badge badge-info">{{ record.currency }}</span>
-                </td>
-                <td class="text-muted">
-                  {{ formatDate(record.createdAt) }}
+            @if (employee().salaryHistory.length === 0) {
+              <tr>
+                <td colspan="5" class="text-center text-muted p-lg">
+                  No salary records found for this employee. Use "Add Salary Record" above to record one.
                 </td>
               </tr>
+            } @else {
+              @for (record of employee().salaryHistory; track record.id) {
+                <tr [class.current-record-row]="record.id === activeSalaryRecordId()">
+                  <td>
+                    @if (record.id === activeSalaryRecordId()) {
+                      <span class="badge badge-success">Current</span>
+                    } @else {
+                      <span class="badge badge-secondary">Historical</span>
+                    }
+                  </td>
+                  <td>
+                    <strong>{{ formatDate(record.effectiveFrom) }}</strong>
+                  </td>
+                  <td class="font-bold">
+                    {{ formatSalary(record.amount, record.currency) }}
+                  </td>
+                  <td>
+                    <span class="badge badge-info">{{ record.currency }}</span>
+                  </td>
+                  <td class="text-muted">
+                    {{ formatDate(record.createdAt) }}
+                  </td>
+                </tr>
+              }
             }
           </tbody>
         </table>
@@ -251,6 +270,10 @@ import { MockEmployeeService } from '../services/mock-employee.service';
       letter-spacing: -0.02em;
       line-height: 1.1;
     }
+    .text-muted-amount {
+      color: var(--color-text-muted);
+      font-size: 1.75rem;
+    }
     .salary-meta {
       display: flex;
       align-items: center;
@@ -277,6 +300,12 @@ import { MockEmployeeService } from '../services/mock-employee.service';
     .text-muted {
       color: var(--color-text-muted);
     }
+    .text-center {
+      text-align: center;
+    }
+    .p-lg {
+      padding: var(--space-lg);
+    }
   `]
 })
 export class EmployeeDetailPage {
@@ -292,6 +321,22 @@ export class EmployeeDetailPage {
     if (!targetId) return this.mockEmployeeService.employees()[0];
     const found = this.mockEmployeeService.getEmployeeById(targetId);
     return found || this.mockEmployeeService.employees()[0];
+  });
+
+  readonly activeSalaryRecordId = computed<string | undefined>(() => {
+    const history = this.employee().salaryHistory;
+    if (!history || history.length === 0) return undefined;
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const sorted = [...history].sort((a, b) => {
+      if (b.effectiveFrom === a.effectiveFrom) {
+        return b.id.localeCompare(a.id);
+      }
+      return b.effectiveFrom.localeCompare(a.effectiveFrom);
+    });
+
+    const activeRecord = sorted.find(r => r.effectiveFrom <= todayStr);
+    return activeRecord?.id;
   });
 
   openEditModal() {
@@ -320,7 +365,10 @@ export class EmployeeDetailPage {
     this.closeSalaryModal();
   }
 
-  formatSalary(amount: number, currency: string): string {
+  formatSalary(amount: number | undefined, currency: string | undefined): string {
+    if (amount === undefined || amount === null || !currency) {
+      return '—';
+    }
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: currency,
@@ -328,7 +376,7 @@ export class EmployeeDetailPage {
     }).format(amount);
   }
 
-  formatDate(dateString: string): string {
+  formatDate(dateString: string | undefined): string {
     if (!dateString) return '-';
     return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',

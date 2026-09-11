@@ -139,7 +139,11 @@ import { MockEmployeeService } from '../services/mock-employee.service';
                   {{ formatSalary(emp.currentSalary, emp.currency) }}
                 </td>
                 <td>
-                  <span class="badge badge-info">{{ emp.currency }}</span>
+                  @if (emp.currency) {
+                    <span class="badge badge-info">{{ emp.currency }}</span>
+                  } @else {
+                    <span class="text-secondary">—</span>
+                  }
                 </td>
                 <td class="text-right">
                   <a [routerLink]="['/employees', emp.id]" class="btn btn-secondary btn-sm" title="View details">
@@ -391,10 +395,13 @@ export class EmployeeListPage {
   onSaveNewEmployee(data: Partial<Employee>) {
     this.mockEmployeeService.addEmployee(data);
     this.closeAddEmployeeModal();
-    this.currentPage.set(1); // Jump to page 1 to highlight new addition
+    this.currentPage.set(1);
   }
 
-  formatSalary(amount: number, currency: string): string {
+  formatSalary(amount: number | undefined, currency: string | undefined): string {
+    if (amount === undefined || amount === null || !currency) {
+      return '—';
+    }
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: currency,

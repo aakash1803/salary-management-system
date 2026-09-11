@@ -67,4 +67,26 @@ describe('EmployeeDetailPage Component', () => {
 
     expect(component.employee().currentSalary).toBe(180000);
   });
+
+  it('should uniquely identify the active salary record by ID and mark only one row as Current', () => {
+    const fixture = TestBed.createComponent(EmployeeDetailPage);
+    fixture.componentRef.setInput('id', '1');
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance;
+    const today = new Date().toISOString().split('T')[0];
+
+    // Add two records on the exact same effective date with identical amount
+    component.onSaveSalaryRecord({ amount: 125000, currency: 'USD', effectiveFrom: today });
+    component.onSaveSalaryRecord({ amount: 125000, currency: 'USD', effectiveFrom: today });
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const currentBadges = compiled.querySelectorAll('.badge-success');
+
+    // Filter current badges in table
+    const currentBadgesInTable = Array.from(currentBadges).filter(el => el.textContent?.trim() === 'Current');
+    expect(currentBadgesInTable.length).toBe(1);
+    expect(component.activeSalaryRecordId()).toBeTruthy();
+  });
 });
