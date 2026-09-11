@@ -1,10 +1,9 @@
 import { TestBed } from '@angular/core/testing';
-import { provideRouter, withComponentInputBinding } from '@angular/router';
-import { RouterTestingHarness } from '@angular/router/testing';
+import { provideRouter, withComponentInputBinding, Router } from '@angular/router';
 import { App } from './app';
 import { routes } from './app.routes';
 
-describe('App', () => {
+describe('App Shell', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [App],
@@ -18,22 +17,55 @@ describe('App', () => {
     expect(app).toBeTruthy();
   });
 
-  it('should render navigation links', () => {
+  it('should render application layout shell on authenticated pages', async () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
+
+    const router = TestBed.inject(Router);
+    await router.navigateByUrl('/dashboard');
+    fixture.detectChanges();
+
     const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.querySelectorAll('nav a').length).toBe(3);
+    expect(compiled.querySelector('.sidebar')).toBeTruthy();
+    expect(compiled.querySelector('.topbar')).toBeTruthy();
+    expect(compiled.querySelector('.brand-title')?.textContent).toContain('Salary Management');
   });
 
-  it('redirects the empty path to /dashboard', async () => {
-    const harness = await RouterTestingHarness.create();
-    await harness.navigateByUrl('/');
-    expect(harness.routeNativeElement?.querySelector('h2')?.textContent).toContain('Dashboard');
+  it('should hide application shell on login page', async () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+
+    const router = TestBed.inject(Router);
+    await router.navigateByUrl('/login');
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.querySelector('.sidebar')).toBeFalsy();
+    expect(compiled.querySelector('.topbar')).toBeFalsy();
+    expect(compiled.querySelector('.auth-wrapper')).toBeTruthy();
   });
 
-  it('navigates to /employees/:id and binds the id param to the component', async () => {
-    const harness = await RouterTestingHarness.create();
-    await harness.navigateByUrl('/employees/42');
-    expect(harness.routeNativeElement?.textContent).toContain('42');
+  it('navigates to /dashboard when accessing default route', async () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+
+    const router = TestBed.inject(Router);
+    await router.navigateByUrl('/');
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.textContent).toContain('HR Payroll Dashboard');
+  });
+
+  it('navigates to /employees/:id and renders employee details', async () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+
+    const router = TestBed.inject(Router);
+    await router.navigateByUrl('/employees/1');
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.textContent).toContain('Sarah Jenkins');
   });
 });
