@@ -9,7 +9,7 @@ This is appropriate for the current scale and scope because:
 - The organization has approximately 10,000 employees and a single primary user role (HR Manager) — this is a small-to-medium data and load profile that does not require independently scaled services.
 - A single relational database (SQLite) is sufficient; there is no need to partition data or ownership across services.
 - A modular monolith keeps deployment, transactions, and data consistency simple (one process, one database, no distributed transactions or network calls between modules).
-- Module boundaries (auth, employee, salary, dashboard, common) still enforce separation of concerns and give a clear path to extraction later, without paying the operational cost of microservices (service discovery, inter-service networking, distributed tracing, independent deployments) up front.
+- Module boundaries (auth, employee, salary, dashboard, common) enforce separation of concerns and leave a clear path to extraction later, without the operational cost of microservices up front.
 - It keeps the system easier to build, test, reason about, and maintain with a small team.
 
 High-level flow:
@@ -17,7 +17,7 @@ High-level flow:
 ```
 Angular frontend
         |
-        | HTTPS / REST API + JWT
+        | HTTPS / REST API + HttpOnly JWT Cookie
         v
 Spring Boot backend
         |
@@ -25,7 +25,7 @@ Spring Boot backend
         +-- Employee module
         +-- Salary module
         +-- Dashboard module
-        +-- Common infrastructure
+        +-- Common module
         |
         v
 Spring Data JPA / Hibernate
@@ -64,7 +64,7 @@ common/
 - **employee** — employee CRUD, search, filtering, pagination.
 - **salary** — salary record creation, salary history, current-salary derivation.
 - **dashboard** — salary insights and aggregate statistics.
-- **common** — shared infrastructure: DTO base types, exception handling, shared validation utilities, common configuration.
+- **common** — shared components such as exception handling, validation utilities, and common configuration.
 
 Within each business module, a simple layered flow is used:
 
@@ -96,43 +96,71 @@ shared/
   services/
 
 features/
-  login/
+  auth/
   dashboard/
   employees/
   salary/
 ```
 
 - **Authentication handling** — the `core/auth` area holds the authentication service responsible for login, logout, and tracking the current authentication state.
-- **JWT storage/handling** — on successful authentication, the frontend securely manages the JWT and attaches it to subsequent authenticated API requests. The exact client-side token storage mechanism will be selected during implementation based on the security trade-offs.
-- **Route guards** — `core/guards` contains guards that prevent navigation to protected routes (employee, salary, dashboard views) unless a valid JWT is present, redirecting unauthenticated users to login.
-- **HTTP interceptor** — `core/interceptors` contains an interceptor that attaches the JWT to outgoing API requests and handles authentication-related error responses (e.g., redirecting to login on a 401).
+- **JWT storage/handling** — the backend sets the JWT in an HttpOnly `access_token` cookie on login. Angular cannot read, decode, or store it (no `localStorage`/`sessionStorage`, no `Authorization` header); the browser sends it automatically because `HttpClient` requests use `withCredentials: true`.
+- **Route guards** — `core/guards` prevents navigation to protected routes (employee, salary, dashboard) unless the user is authenticated, redirecting to login otherwise. Guards cannot read the JWT directly (it is HttpOnly), so they wait for authentication state from `GET /api/auth/me` before deciding.
+- **HTTP interceptor** — `core/interceptors` handles cross-cutting HTTP concerns such as redirecting to login on a 401. It does not attach the JWT; the browser sends the `access_token` cookie automatically.
 - **API services** — `core/services` and `shared/services` contain services responsible for calling backend REST endpoints (employee, salary, dashboard) and returning typed data to components.
-- **Feature components** — `features/` contains one folder per screen/capability (login, dashboard, employees, salary), each composed of the components needed for that feature (e.g., employee list, employee detail/edit, salary history).
+- **Feature components** — `features/` contains one folder per screen/capability (auth, dashboard, employees, salary), each composed of the components needed for that feature (e.g., employee list, employee detail/edit, salary history).
 - **Shared reusable components** — `shared/components` holds presentational components reused across features (e.g., pagination control, table, form controls), and `shared/models` holds TypeScript interfaces/types shared across features.
 
-This structure is kept practical: it separates cross-cutting infrastructure (`core`), reusable UI (`shared`), and screen-specific code (`features`), without introducing state-management libraries or architectural patterns beyond what a single-role, moderately sized application needs.
+### Frontend State and Asynchronous Operations
+
+- **Signals** — used for local/shared UI state and derived state.
+- **RxJS** — used for HTTP calls and other asynchronous operations.
+- No state-management library (e.g., NgRx) is introduced.
+
+This structure separates cross-cutting infrastructure (`core`), reusable UI (`shared`), and screen-specific code (`features`) — practical for a single-role, moderately sized application.
 
 ## 5. Authentication and Security
 
-Planned JWT authentication flow:
+JWT authentication flow:
 
 ```
 Login
   → backend validates credentials
   → JWT generated
-  → frontend stores token
-  → interceptor sends token with protected requests
-  → backend validates JWT
+  → backend sets JWT in an HttpOnly access_token cookie
+  → browser stores the cookie (inaccessible to frontend JavaScript)
+  → browser automatically sends the cookie with subsequent requests
+  → backend validates JWT from the cookie
   → protected resources become accessible
 ```
 
 - The HR Manager submits credentials via the login screen.
-- The backend `auth` module validates the credentials and, on success, issues a signed JWT.
-- The frontend stores the JWT and includes it (via the HTTP interceptor) on subsequent requests to protected endpoints.
-- The backend validates the JWT on each protected request before allowing access.
+- The backend validates the credentials and, on success, issues a signed JWT.
+- The JWT is set as an HttpOnly `access_token` cookie; it is never returned in the response body.
+- The browser sends the cookie automatically on later requests (`withCredentials: true`), and the backend validates it before allowing access.
+- The frontend restores authentication state via `GET /api/auth/me`, since it cannot read the cookie directly.
+- Logout clears the cookie on the backend.
 - All employee, salary, and dashboard endpoints require a valid JWT; unauthenticated requests are rejected.
 
 Because there is a single primary user role (HR Manager), authentication is intentionally simple: it verifies *who* the caller is, without a role/permission hierarchy, resource-level authorization matrix, or multi-tenancy concerns. No additional roles or permission levels are introduced beyond what the requirements specify.
+
+### Cookie Configuration
+
+The `access_token` cookie is configured as:
+
+- `HttpOnly=true`.
+- `SameSite=Lax`.
+- `Secure` — configurable: `false` for local HTTP development, `true` for HTTPS deployment.
+- `Path=/`.
+- `Max-Age` aligned with the configured JWT expiration.
+- No `Domain` is configured.
+
+### CORS
+
+CORS is restricted to the configured frontend origin, with credentials explicitly allowed. Wildcard origins are not used.
+
+### CSRF
+
+CSRF protection is currently disabled as a deliberate scope decision. The current design uses `SameSite=Lax` cookies, which provides browser-level CSRF mitigation for the supported cross-site request scenarios, and the API does not expose authenticated state-changing GET endpoints. CORS is separately restricted to the configured trusted frontend origin. If the deployment changes to cross-site cookies (e.g., `SameSite=None`) or the authenticated browser-facing surface expands, explicit CSRF protection should be introduced.
 
 ## 6. Data Access
 
@@ -169,7 +197,7 @@ No specific benchmark numbers or SLAs are defined, since none were specified in 
 
 ## 9. Error Handling
 
-Centralized exception handling is planned using Spring's exception-handling mechanisms (e.g., a global exception handler), covering:
+Centralized exception handling is implemented using Spring's exception-handling mechanisms (a global exception handler), covering:
 
 - **Validation errors** — invalid request payloads (e.g., a non-positive salary amount) return a 400-level response describing what was invalid.
 - **Resource-not-found errors** — requests referencing a non-existent employee or salary record return a 404-level response.
@@ -197,7 +225,7 @@ Object-oriented design and SOLID principles guide implementation (e.g., single-r
 - **SQLite instead of a separately managed database server** — chosen for simplicity of deployment (no separate database server/process to provision and manage) given the requirements; it is adequate for the expected data volume (~10,000 employees and their salary history).
 - **JPA/Hibernate instead of handwritten persistence** — reduces boilerplate for standard CRUD and query needs while still allowing custom queries where required; avoids maintaining hand-rolled SQL/mapping code for straightforward entity persistence.
 - **Server-side pagination/filtering instead of client-side** — keeps response payloads small and avoids transferring/holding the full ~10,000-employee dataset in the browser or application memory.
-- **JWT for stateless authentication** — avoids server-side session storage/state, simplifying scaling and deployment, and is proportionate to a system with a single user role and straightforward authentication needs.
+- **JWT for stateless authentication** — avoids server-side session storage, and fits a system with one user role and simple authentication needs. An HttpOnly cookie keeps the token safe from JavaScript, at the cost of extra CORS, `SameSite`, and CSRF considerations.
 
 ## 12. Architecture Diagram
 
@@ -209,11 +237,11 @@ flowchart TD
     EMP["Employee Module"]
     SAL["Salary Module"]
     DASH["Dashboard Module"]
-    COMMON["Common Infrastructure"]
+    COMMON["Common Module"]
     JPA["Spring Data JPA / Hibernate"]
     DB[("SQLite Database")]
 
-    FE -->|"HTTPS / REST API + JWT"| API
+    FE -->|"HTTPS / REST API + HttpOnly JWT Cookie"| API
     API --> AUTH
     API --> EMP
     API --> SAL
