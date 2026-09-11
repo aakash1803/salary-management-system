@@ -1,4 +1,10 @@
 <form [formGroup]="salaryForm" (ngSubmit)="onSubmit()" class="salary-form" novalidate>
+  @if (errorMessage()) {
+    <div class="alert alert-error mb-md">
+      {{ errorMessage() }}
+    </div>
+  }
+
   <div class="callout-info">
     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="info-icon"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
     <span>Salary changes are stored as new records. Previous salary history is preserved.</span>
@@ -55,11 +61,15 @@
   </div>
 
   <div class="form-actions">
-    <button type="button" class="btn btn-secondary" (click)="cancelForm.emit()">
+    <button type="button" class="btn btn-secondary" [disabled]="isLoading()" (click)="cancelForm.emit()">
       Cancel
     </button>
-    <button type="submit" class="btn btn-primary">
-      Add Salary Record
+    <button type="submit" class="btn btn-primary" [disabled]="isLoading()">
+      @if (isLoading()) {
+        Saving...
+      } @else {
+        Add Salary Record
+      }
     </button>
   </div>
 </form>

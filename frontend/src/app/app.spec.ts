@@ -89,6 +89,9 @@ describe('App Shell', () => {
       country: 'United States',
       department: 'Engineering'
     });
+
+    httpMock.expectOne('/api/employees/1/salary').flush({ message: 'No salary' }, { status: 404, statusText: 'Not Found' });
+    httpMock.expectOne('/api/employees/1/salary/history').flush([]);
     fixture.detectChanges();
 
     const compiled = fixture.nativeElement as HTMLElement;

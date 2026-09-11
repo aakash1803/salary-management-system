@@ -57,7 +57,8 @@
   @if (isSalaryModalOpen()) {
     <app-modal title="Add Salary Record" (closeModal)="closeSalaryModal()">
       <app-salary-form
-        defaultCurrency="USD"
+        [isLoading]="isSavingSalary()"
+        [errorMessage]="salaryError()"
         (saveForm)="onSaveSalaryRecord($event)"
         (cancelForm)="closeSalaryModal()"
       />
@@ -102,13 +103,29 @@
     <div class="card salary-highlight-card">
       <div class="card-header">
         <h2 class="card-title">Current Compensation</h2>
-        <span class="badge badge-secondary">No History</span>
+        @if (currentSalary()) {
+          <span class="badge badge-success">Active</span>
+        } @else {
+          <span class="badge badge-secondary">No Active Salary</span>
+        }
       </div>
       <div class="salary-display">
-        <div class="salary-amount text-muted-amount">No Active Salary</div>
-        <div class="salary-meta">
-          <span class="meta-label">Click "Add Salary Record" to record initial salary history.</span>
-        </div>
+        @if (currentSalaryError(); as err) {
+          <div class="salary-amount text-error">{{ err }}</div>
+          <div class="salary-meta">
+            <span class="meta-label">Unable to load current salary.</span>
+          </div>
+        } @else if (currentSalary(); as sal) {
+          <div class="salary-amount">{{ formatSalary(sal.amount, sal.currency) }}</div>
+          <div class="salary-meta">
+            <span class="meta-label">Effective from {{ sal.effectiveFrom }}</span>
+          </div>
+        } @else {
+          <div class="salary-amount text-muted-amount">No Active Salary</div>
+          <div class="salary-meta">
+            <span class="meta-label">Click "Add Salary Record" to record initial salary history.</span>
+          </div>
+        }
       </div>
     </div>
   </div>
@@ -134,11 +151,37 @@
           </tr>
         </thead>
         <tbody>
-          <tr>
-            <td colspan="5" class="text-center text-muted p-lg">
-              No salary records found for this employee. Use "Add Salary Record" above to record one.
-            </td>
-          </tr>
+          @if (salaryHistoryError(); as err) {
+            <tr>
+              <td colspan="5" class="text-center text-error p-lg">
+                {{ err }}
+              </td>
+            </tr>
+          } @else {
+            @for (record of salaryHistory(); track record.id) {
+              <tr>
+                <td>
+                  @if (record.id === currentSalary()?.id) {
+                    <span class="badge badge-success">Active</span>
+                  } @else if (isFutureDate(record.effectiveFrom)) {
+                    <span class="badge badge-info">Future</span>
+                  } @else {
+                    <span class="badge badge-secondary">Superseded</span>
+                  }
+                </td>
+                <td>{{ record.effectiveFrom }}</td>
+                <td class="font-medium">{{ formatSalary(record.amount, record.currency) }}</td>
+                <td><span class="currency-code">{{ record.currency }}</span></td>
+                <td class="text-muted">{{ formatDate(record.createdAt) }}</td>
+              </tr>
+            } @empty {
+              <tr>
+                <td colspan="5" class="text-center text-muted p-lg">
+                  No salary records found for this employee. Use "Add Salary Record" above to record one.
+                </td>
+              </tr>
+            }
+          }
         </tbody>
       </table>
     </div>

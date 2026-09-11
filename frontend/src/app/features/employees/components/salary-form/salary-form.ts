@@ -1,5 +1,6 @@
 import { Component, input, output } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { SalaryRequest } from '../../models/salary.model';
 
 @Component({
   selector: 'app-salary-form',
@@ -9,8 +10,10 @@ import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angula
   styleUrl: './salary-form.scss'
 })
 export class SalaryForm {
-  readonly defaultCurrency = input<string>('USD');
-  readonly saveForm = output<{ amount: number; currency: string; effectiveFrom: string }>();
+  readonly isLoading = input<boolean>(false);
+  readonly errorMessage = input<string | null>(null);
+
+  readonly saveForm = output<SalaryRequest>();
   readonly cancelForm = output<void>();
 
   readonly currencies = ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'INR', 'JPY'];
@@ -22,12 +25,6 @@ export class SalaryForm {
     currency: new FormControl('USD', { nonNullable: true, validators: [Validators.required] }),
     effectiveFrom: new FormControl(this.todayStr, { nonNullable: true, validators: [Validators.required] }),
   });
-
-  constructor() {
-    if (this.defaultCurrency()) {
-      this.salaryForm.patchValue({ currency: this.defaultCurrency() });
-    }
-  }
 
   onSubmit() {
     if (this.salaryForm.invalid) {
