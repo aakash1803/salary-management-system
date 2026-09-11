@@ -74,8 +74,21 @@ describe('App Shell', () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
 
+    const httpMock = TestBed.inject(HttpTestingController);
     const router = TestBed.inject(Router);
     await router.navigateByUrl('/employees/1');
+    fixture.detectChanges();
+
+    const req = httpMock.expectOne('/api/employees/1');
+    req.flush({
+      id: 1,
+      employeeNumber: 'EMP-1001',
+      firstName: 'Sarah',
+      lastName: 'Jenkins',
+      email: 'sarah.jenkins@company.com',
+      country: 'United States',
+      department: 'Engineering'
+    });
     fixture.detectChanges();
 
     const compiled = fixture.nativeElement as HTMLElement;

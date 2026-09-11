@@ -1,49 +1,76 @@
-import { Component, computed, inject, input, signal } from '@angular/core';
+import { Component, DestroyRef, inject, input, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
+import { EMPTY, catchError, switchMap } from 'rxjs';
 import { PageHeader } from '../../../shared/components/page-header/page-header';
+import { EmptyState } from '../../../shared/components/empty-state/empty-state';
+import { LoadingState } from '../../../shared/components/loading-state/loading-state';
 import { Modal } from '../../../shared/components/modal/modal';
 import { EmployeeForm } from '../components/employee-form/employee-form';
 import { SalaryForm } from '../components/salary-form/salary-form';
-import { Employee } from '../models/employee.model';
-import { MockEmployeeService } from '../services/mock-employee.service';
+import { EmployeeResponse } from '../models/employee.model';
+import { EmployeeService } from '../services/employee.service';
 
 @Component({
   selector: 'app-employee-detail-page',
   standalone: true,
-  imports: [RouterLink, PageHeader, Modal, EmployeeForm, SalaryForm],
+  imports: [RouterLink, PageHeader, EmptyState, LoadingState, Modal, EmployeeForm, SalaryForm],
   templateUrl: './employee-detail-page.html',
   styleUrl: './employee-detail-page.scss'
 })
 export class EmployeeDetailPage {
-  private readonly mockEmployeeService = inject(MockEmployeeService);
+  private readonly employeeService = inject(EmployeeService);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly id = input<string>();
+
+  readonly employee = signal<EmployeeResponse | null>(null);
+  readonly isLoading = signal(true);
+  readonly isNotFound = signal(false);
+  readonly errorMessage = signal<string | null>(null);
 
   readonly isEditModalOpen = signal(false);
   readonly isSalaryModalOpen = signal(false);
 
-  readonly employee = computed<Employee>(() => {
-    const targetId = this.id();
-    if (!targetId) return this.mockEmployeeService.employees()[0];
-    const found = this.mockEmployeeService.getEmployeeById(targetId);
-    return found || this.mockEmployeeService.employees()[0];
-  });
+  constructor() {
+    toObservable(this.id).pipe(
+      switchMap(rawId => {
+        const numId = Number(rawId);
+        if (!rawId || isNaN(numId)) {
+          this.employee.set(null);
+          this.isLoading.set(false);
+          this.isNotFound.set(true);
+          this.errorMessage.set(null);
+          return EMPTY;
+        }
 
-  readonly activeSalaryRecordId = computed<string | undefined>(() => {
-    const history = this.employee().salaryHistory;
-    if (!history || history.length === 0) return undefined;
+        this.isLoading.set(true);
+        this.isNotFound.set(false);
+        this.errorMessage.set(null);
 
-    const todayStr = new Date().toISOString().split('T')[0];
-    const sorted = [...history].sort((a, b) => {
-      if (b.effectiveFrom === a.effectiveFrom) {
-        return b.id.localeCompare(a.id);
-      }
-      return b.effectiveFrom.localeCompare(a.effectiveFrom);
+        return this.employeeService.getEmployeeById(numId).pipe(
+          catchError(err => {
+            this.employee.set(null);
+            this.isLoading.set(false);
+            if (err?.status === 404) {
+              this.isNotFound.set(true);
+              this.errorMessage.set(null);
+            } else {
+              this.isNotFound.set(false);
+              this.errorMessage.set(err?.error?.message || 'Failed to load employee details.');
+            }
+            return EMPTY;
+          })
+        );
+      }),
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe(emp => {
+      this.employee.set(emp);
+      this.isLoading.set(false);
+      this.isNotFound.set(false);
+      this.errorMessage.set(null);
     });
-
-    const activeRecord = sorted.find(r => r.effectiveFrom <= todayStr);
-    return activeRecord?.id;
-  });
+  }
 
   openEditModal() {
     this.isEditModalOpen.set(true);
@@ -53,8 +80,7 @@ export class EmployeeDetailPage {
     this.isEditModalOpen.set(false);
   }
 
-  onSaveEditEmployee(data: Partial<Employee>) {
-    this.mockEmployeeService.updateEmployee(this.employee().id, data);
+  onSaveEditEmployee(data: any) {
     this.closeEditModal();
   }
 
@@ -66,28 +92,7 @@ export class EmployeeDetailPage {
     this.isSalaryModalOpen.set(false);
   }
 
-  onSaveSalaryRecord(data: { amount: number; currency: string; effectiveFrom: string }) {
-    this.mockEmployeeService.addSalaryRecord(this.employee().id, data);
+  onSaveSalaryRecord(data: any) {
     this.closeSalaryModal();
-  }
-
-  formatSalary(amount: number | undefined, currency: string | undefined): string {
-    if (amount === undefined || amount === null || !currency) {
-      return '—';
-    }
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: currency,
-      maximumFractionDigits: 0
-    }).format(amount);
-  }
-
-  formatDate(dateString: string | undefined): string {
-    if (!dateString) return '-';
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    });
   }
 }

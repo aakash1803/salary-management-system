@@ -1,6 +1,6 @@
 import { Component, effect, input, output } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Employee } from '../../models/employee.model';
+import { Employee, EmployeeResponse } from '../../models/employee.model';
 
 @Component({
   selector: 'app-employee-form',
@@ -11,7 +11,7 @@ import { Employee } from '../../models/employee.model';
 })
 export class EmployeeForm {
   readonly mode = input<'CREATE' | 'EDIT'>('CREATE');
-  readonly employee = input<Employee | null>(null);
+  readonly employee = input<EmployeeResponse | Employee | null>(null);
 
   readonly saveForm = output<Partial<Employee>>();
   readonly cancelForm = output<void>();
