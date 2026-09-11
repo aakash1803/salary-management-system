@@ -1,3 +1,42 @@
+export interface EmployeeResponse {
+  id: number;
+  employeeNumber: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  country: string;
+  department: string;
+}
+
+export interface EmployeeRequest {
+  employeeNumber: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  country: string;
+  department: string;
+}
+
+export interface PageResponse<T> {
+  content: T[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+  first: boolean;
+  last: boolean;
+}
+
+export interface EmployeeQueryParams {
+  search?: string;
+  country?: string;
+  department?: string;
+  page?: number;
+  size?: number;
+  sortBy?: string;
+  sortDirection?: 'asc' | 'desc';
+}
+
 export interface SalaryRecord {
   id: string;
   effectiveFrom: string;
@@ -7,7 +46,7 @@ export interface SalaryRecord {
 }
 
 export interface Employee {
-  id: string;
+  id: number;
   employeeNumber: string;
   firstName: string;
   lastName: string;

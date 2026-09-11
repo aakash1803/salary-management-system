@@ -16,13 +16,13 @@ export class MockEmployeeService {
     return this.employeesSignal();
   }
 
-  getEmployeeById(id: string): Employee | undefined {
-    return this.employeesSignal().find(e => e.id === id || e.employeeNumber === id);
+  getEmployeeById(id: number | string): Employee | undefined {
+    return this.employeesSignal().find(e => String(e.id) === String(id) || e.employeeNumber === id);
   }
 
   addEmployee(data: Partial<Employee>): Employee {
     const newEmployee: Employee = {
-      id: String(Date.now()),
+      id: Date.now(),
       employeeNumber: data.employeeNumber || `EMP-${1000 + this.employeesSignal().length + 1}`,
       firstName: data.firstName || '',
       lastName: data.lastName || '',
@@ -39,12 +39,12 @@ export class MockEmployeeService {
     return newEmployee;
   }
 
-  updateEmployee(id: string, data: Partial<Employee>): Employee | undefined {
+  updateEmployee(id: number | string, data: Partial<Employee>): Employee | undefined {
     let updatedEmp: Employee | undefined;
 
     this.employeesSignal.update(list =>
       list.map(emp => {
-        if (emp.id === id || emp.employeeNumber === id) {
+        if (String(emp.id) === String(id) || emp.employeeNumber === id) {
           updatedEmp = {
             ...emp,
             ...data,
@@ -62,7 +62,7 @@ export class MockEmployeeService {
   }
 
   addSalaryRecord(
-    employeeId: string,
+    employeeId: number | string,
     recordData: { amount: number; currency: string; effectiveFrom: string }
   ): Employee | undefined {
     let updatedEmp: Employee | undefined;
@@ -70,7 +70,7 @@ export class MockEmployeeService {
 
     this.employeesSignal.update(list =>
       list.map(emp => {
-        if (emp.id === employeeId || emp.employeeNumber === employeeId) {
+        if (String(emp.id) === String(employeeId) || emp.employeeNumber === employeeId) {
           const newRecord: SalaryRecord = {
             id: 'sh-' + Date.now() + '-' + (++salaryRecordSeq),
             effectiveFrom: recordData.effectiveFrom,

@@ -2,7 +2,7 @@ import { Employee } from '../models/employee.model';
 
 export const MOCK_EMPLOYEES: Employee[] = [
   {
-    id: '1',
+    id: 1,
     employeeNumber: 'EMP-1001',
     firstName: 'Sarah',
     lastName: 'Jenkins',
@@ -37,7 +37,7 @@ export const MOCK_EMPLOYEES: Employee[] = [
     ],
   },
   {
-    id: '2',
+    id: 2,
     employeeNumber: 'EMP-1002',
     firstName: 'Marcus',
     lastName: 'Vance',
@@ -65,7 +65,7 @@ export const MOCK_EMPLOYEES: Employee[] = [
     ],
   },
   {
-    id: '3',
+    id: 3,
     employeeNumber: 'EMP-1003',
     firstName: 'Elena',
     lastName: 'Rostova',
@@ -93,7 +93,7 @@ export const MOCK_EMPLOYEES: Employee[] = [
     ],
   },
   {
-    id: '4',
+    id: 4,
     employeeNumber: 'EMP-1004',
     firstName: 'David',
     lastName: 'Chen',
@@ -121,7 +121,7 @@ export const MOCK_EMPLOYEES: Employee[] = [
     ],
   },
   {
-    id: '5',
+    id: 5,
     employeeNumber: 'EMP-1005',
     firstName: 'Aisha',
     lastName: 'Patel',
@@ -149,7 +149,7 @@ export const MOCK_EMPLOYEES: Employee[] = [
     ],
   },
   {
-    id: '6',
+    id: 6,
     employeeNumber: 'EMP-1006',
     firstName: 'Hiroshi',
     lastName: 'Tanaka',
@@ -177,7 +177,7 @@ export const MOCK_EMPLOYEES: Employee[] = [
     ],
   },
   {
-    id: '7',
+    id: 7,
     employeeNumber: 'EMP-1007',
     firstName: 'Chloe',
     lastName: 'Dubois',
@@ -205,7 +205,7 @@ export const MOCK_EMPLOYEES: Employee[] = [
     ],
   },
   {
-    id: '8',
+    id: 8,
     employeeNumber: 'EMP-1008',
     firstName: 'Rohan',
     lastName: 'Sharma',
@@ -233,7 +233,7 @@ export const MOCK_EMPLOYEES: Employee[] = [
     ],
   },
   {
-    id: '9',
+    id: 9,
     employeeNumber: 'EMP-1009',
     firstName: 'Olivia',
     lastName: 'Taylor',
@@ -261,7 +261,7 @@ export const MOCK_EMPLOYEES: Employee[] = [
     ],
   },
   {
-    id: '10',
+    id: 10,
     employeeNumber: 'EMP-1010',
     firstName: 'Liam',
     lastName: 'O\'Connor',
@@ -289,7 +289,7 @@ export const MOCK_EMPLOYEES: Employee[] = [
     ],
   },
   {
-    id: '11',
+    id: 11,
     employeeNumber: 'EMP-1011',
     firstName: 'Sofia',
     lastName: 'Garcia',
@@ -310,7 +310,7 @@ export const MOCK_EMPLOYEES: Employee[] = [
     ],
   },
   {
-    id: '12',
+    id: 12,
     employeeNumber: 'EMP-1012',
     firstName: 'Alexander',
     lastName: 'Mueller',

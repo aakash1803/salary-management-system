@@ -1,12 +1,12 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { PageHeader } from '../../../shared/components/page-header/page-header';
 import { EmptyState } from '../../../shared/components/empty-state/empty-state';
 import { LoadingState } from '../../../shared/components/loading-state/loading-state';
 import { Modal } from '../../../shared/components/modal/modal';
 import { EmployeeForm } from '../components/employee-form/employee-form';
-import { Employee } from '../models/employee.model';
-import { MockEmployeeService } from '../services/mock-employee.service';
+import { Employee, EmployeeResponse } from '../models/employee.model';
+import { EmployeeService } from '../services/employee.service';
 
 @Component({
   selector: 'app-employee-list-page',
@@ -15,66 +15,48 @@ import { MockEmployeeService } from '../services/mock-employee.service';
   templateUrl: './employee-list-page.html',
   styleUrl: './employee-list-page.scss'
 })
-export class EmployeeListPage {
-  private readonly mockEmployeeService = inject(MockEmployeeService);
-
-  readonly allEmployees = this.mockEmployeeService.employees;
+export class EmployeeListPage implements OnInit {
+  private readonly employeeService = inject(EmployeeService);
 
   // Filter signals
   readonly searchQuery = signal('');
   readonly selectedCountry = signal('');
   readonly selectedDepartment = signal('');
 
-  // Pagination signals
+  // Static filter dropdown options
+  readonly countries = signal([
+    'Canada',
+    'France',
+    'Germany',
+    'India',
+    'Japan',
+    'United Kingdom',
+    'United States'
+  ]);
+
+  readonly departments = signal([
+    'Engineering',
+    'Executive',
+    'Finance',
+    'Human Resources',
+    'Marketing',
+    'Operations',
+    'Product',
+    'Sales',
+    'Technology'
+  ]);
+
+  // Pagination & List signals
   readonly currentPage = signal(1);
   readonly pageSize = signal(5);
+  readonly totalItems = signal(0);
+  readonly totalPages = signal(1);
+  readonly displayedEmployees = signal<EmployeeResponse[]>([]);
   readonly isLoading = signal(false);
+  readonly errorMessage = signal<string | null>(null);
 
   // Modal signal
   readonly isAddModalOpen = signal(false);
-
-  // Dynamic filter dropdown options derived from state
-  readonly countries = computed(() =>
-    Array.from(new Set(this.allEmployees().map(e => e.country))).sort()
-  );
-
-  readonly departments = computed(() =>
-    Array.from(new Set(this.allEmployees().map(e => e.department))).sort()
-  );
-
-  // Derived filtered employees list
-  readonly filteredEmployees = computed(() => {
-    const query = this.searchQuery().toLowerCase().trim();
-    const country = this.selectedCountry();
-    const dept = this.selectedDepartment();
-
-    return this.allEmployees().filter(emp => {
-      const matchesQuery = !query ||
-        emp.firstName.toLowerCase().includes(query) ||
-        emp.lastName.toLowerCase().includes(query) ||
-        emp.email.toLowerCase().includes(query) ||
-        emp.employeeNumber.toLowerCase().includes(query);
-
-      const matchesCountry = !country || emp.country === country;
-      const matchesDept = !dept || emp.department === dept;
-
-      return matchesQuery && matchesCountry && matchesDept;
-    });
-  });
-
-  // Derived Pagination computations
-  readonly totalItems = computed(() => this.filteredEmployees().length);
-
-  readonly totalPages = computed(() => {
-    return Math.ceil(this.totalItems() / this.pageSize()) || 1;
-  });
-
-  readonly displayedEmployees = computed(() => {
-    const page = this.currentPage();
-    const size = this.pageSize();
-    const start = (page - 1) * size;
-    return this.filteredEmployees().slice(start, start + size);
-  });
 
   readonly rangeText = computed(() => {
     const total = this.totalItems();
@@ -84,22 +66,58 @@ export class EmployeeListPage {
     return `Showing ${start}–${end} of ${total} employees`;
   });
 
+  ngOnInit() {
+    this.loadEmployees();
+  }
+
+  loadEmployees() {
+    this.isLoading.set(true);
+    this.errorMessage.set(null);
+
+    const apiPage = Math.max(0, this.currentPage() - 1);
+
+    this.employeeService.getEmployees({
+      search: this.searchQuery().trim() || undefined,
+      country: this.selectedCountry() || undefined,
+      department: this.selectedDepartment() || undefined,
+      page: apiPage,
+      size: this.pageSize()
+    }).subscribe({
+      next: (response) => {
+        this.displayedEmployees.set(response.content || []);
+        this.totalItems.set(response.totalElements ?? 0);
+        this.totalPages.set(response.totalPages || 1);
+        this.isLoading.set(false);
+      },
+      error: (err) => {
+        this.displayedEmployees.set([]);
+        this.totalItems.set(0);
+        this.totalPages.set(1);
+        this.isLoading.set(false);
+        this.errorMessage.set(err?.error?.message || 'Failed to load employee directory.');
+      }
+    });
+  }
+
   onSearchChange(event: Event) {
     const value = (event.target as HTMLInputElement).value;
     this.searchQuery.set(value);
     this.currentPage.set(1);
+    this.loadEmployees();
   }
 
   onCountryChange(event: Event) {
     const value = (event.target as HTMLSelectElement).value;
     this.selectedCountry.set(value);
     this.currentPage.set(1);
+    this.loadEmployees();
   }
 
   onDepartmentChange(event: Event) {
     const value = (event.target as HTMLSelectElement).value;
     this.selectedDepartment.set(value);
     this.currentPage.set(1);
+    this.loadEmployees();
   }
 
   clearFilters() {
@@ -107,11 +125,13 @@ export class EmployeeListPage {
     this.selectedCountry.set('');
     this.selectedDepartment.set('');
     this.currentPage.set(1);
+    this.loadEmployees();
   }
 
   goToPage(page: number) {
     if (page >= 1 && page <= this.totalPages()) {
       this.currentPage.set(page);
+      this.loadEmployees();
     }
   }
 
@@ -124,9 +144,9 @@ export class EmployeeListPage {
   }
 
   onSaveNewEmployee(data: Partial<Employee>) {
-    this.mockEmployeeService.addEmployee(data);
     this.closeAddEmployeeModal();
     this.currentPage.set(1);
+    this.loadEmployees();
   }
 
   formatSalary(amount: number | undefined, currency: string | undefined): string {

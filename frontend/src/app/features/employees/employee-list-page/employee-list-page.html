@@ -84,6 +84,13 @@
 <!-- Main Table or States -->
 @if (isLoading()) {
   <app-loading-state message="Loading employee directory..." />
+} @else if (errorMessage()) {
+  <app-empty-state
+    title="Unable to load employees"
+    [description]="errorMessage()!"
+  >
+    <button type="button" class="btn btn-secondary" (click)="loadEmployees()">Try Again</button>
+  </app-empty-state>
 } @else if (totalItems() === 0) {
   <app-empty-state
     title="No employees match your filters"
@@ -121,14 +128,10 @@
               <span class="badge badge-secondary">{{ emp.department }}</span>
             </td>
             <td class="font-medium">
-              {{ formatSalary(emp.currentSalary, emp.currency) }}
+              —
             </td>
             <td>
-              @if (emp.currency) {
-                <span class="badge badge-info">{{ emp.currency }}</span>
-              } @else {
-                <span class="text-secondary">—</span>
-              }
+              <span class="text-secondary">—</span>
             </td>
             <td class="text-right">
               <a [routerLink]="['/employees', emp.id]" class="btn btn-secondary btn-sm" title="View details">
