@@ -1,14 +1,27 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter, withComponentInputBinding, Router } from '@angular/router';
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { App } from './app';
 import { routes } from './app.routes';
+import { AuthService } from './core/auth/services/auth.service';
 
 describe('App Shell', () => {
+  let authService: AuthService;
+
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [App],
-      providers: [provideRouter(routes, withComponentInputBinding())],
+      providers: [
+        provideRouter(routes, withComponentInputBinding()),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+      ],
     }).compileComponents();
+
+    authService = TestBed.inject(AuthService);
+    // Mock user profile as logged in for route tests
+    (authService as any).currentUserSignal.set({ username: 'hr.manager' });
   });
 
   it('should create the app', () => {

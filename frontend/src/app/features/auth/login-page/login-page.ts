@@ -1,6 +1,7 @@
 import { Component, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
+import { AuthService } from '../../../core/auth/services/auth.service';
 
 @Component({
   selector: 'app-login-page',
@@ -11,6 +12,7 @@ import { Router } from '@angular/router';
 })
 export class LoginPage {
   private readonly router = inject(Router);
+  private readonly authService = inject(AuthService);
 
   readonly isLoading = signal(false);
   readonly errorMessage = signal<string | null>(null);
@@ -37,20 +39,16 @@ export class LoginPage {
 
     this.isLoading.set(true);
 
-    setTimeout(() => {
-      this.isLoading.set(false);
-      this.router.navigate(['/dashboard']);
-    }, 600);
-  }
-
-  toggleValidationErrorDemo() {
-    if (this.errorMessage()) {
-      this.errorMessage.set(null);
-    } else {
-      this.loginForm.controls.username.setValue('');
-      this.loginForm.controls.password.setValue('');
-      this.loginForm.markAllAsTouched();
-      this.errorMessage.set('Invalid username or password. (Demo validation error state)');
-    }
+    this.authService.login(this.loginForm.getRawValue()).subscribe({
+      next: () => {
+        this.isLoading.set(false);
+        this.router.navigate(['/dashboard']);
+      },
+      error: (err) => {
+        this.isLoading.set(false);
+        const message = err?.error?.message || 'Invalid username or password.';
+        this.errorMessage.set(message);
+      }
+    });
   }
 }
