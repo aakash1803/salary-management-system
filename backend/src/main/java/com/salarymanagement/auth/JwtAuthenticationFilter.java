@@ -3,24 +3,28 @@ package com.salarymanagement.auth;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
-import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.List;
 
 /**
- * Reads {@code Authorization: Bearer <token>} and, if the token is valid, populates the
- * security context so the request is treated as authenticated.
+ * Reads the JWT from the {@code access_token} HttpOnly cookie (name configured via
+ * {@code app.security.jwt.cookie-name}) and, if the token is valid, populates the security
+ * context so the request is treated as authenticated.
  *
- * <p>A missing, malformed, or invalid/expired token simply leaves the request unauthenticated;
+ * <p>Cookie-only: this filter never reads the {@code Authorization} header. The JWT is issued
+ * exclusively as an HttpOnly cookie by {@link AuthController}, so the cookie is the sole
+ * supported transport - there is no header-based fallback mode.
+ *
+ * <p>A missing, malformed, or invalid/expired cookie simply leaves the request unauthenticated;
  * it is then rejected with 401 by {@link JwtAuthenticationEntryPoint} if it reaches a protected
  * endpoint. Both cases are handled identically - there is no separate error path here for
  * "missing" vs. "invalid" tokens.
@@ -30,22 +34,21 @@ import java.util.List;
  */
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
-    private static final String BEARER_PREFIX = "Bearer ";
-
     private final JwtService jwtService;
+    private final String cookieName;
 
-    public JwtAuthenticationFilter(JwtService jwtService) {
+    public JwtAuthenticationFilter(JwtService jwtService, String cookieName) {
         this.jwtService = jwtService;
+        this.cookieName = cookieName;
     }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
 
-        String header = request.getHeader(HttpHeaders.AUTHORIZATION);
+        String token = readTokenFromCookie(request);
 
-        if (StringUtils.hasText(header) && header.startsWith(BEARER_PREFIX)) {
-            String token = header.substring(BEARER_PREFIX.length());
+        if (token != null) {
             try {
                 String username = jwtService.validateAndGetSubject(token);
                 if (SecurityContextHolder.getContext().getAuthentication() == null) {
@@ -62,5 +65,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private String readTokenFromCookie(HttpServletRequest request) {
+        Cookie[] cookies = request.getCookies();
+        if (cookies == null) {
+            return null;
+        }
+        for (Cookie cookie : cookies) {
+            if (cookieName.equals(cookie.getName())) {
+                return cookie.getValue();
+            }
+        }
+        return null;
     }
 }

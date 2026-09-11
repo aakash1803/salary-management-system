@@ -12,6 +12,10 @@ import org.springframework.stereotype.Service;
  * both externally configured - see {@link JwtService} and application.properties), not a
  * database-backed user store: the project has one primary user role, so a full user-management
  * subsystem would be unnecessary complexity for this requirement.
+ *
+ * <p>This class stays free of HTTP/servlet concerns: it returns the raw {@link AuthResult}
+ * (including the token) and leaves it to {@link AuthController} to decide how the token is
+ * transported to the client (an HttpOnly cookie) and what, if anything, goes in the JSON body.
  */
 @Service
 public class AuthService {
@@ -32,7 +36,7 @@ public class AuthService {
         this.jwtService = jwtService;
     }
 
-    public LoginResponse login(String username, String password) {
+    AuthResult login(String username, String password) {
         // Both checks are always evaluated (rather than short-circuiting as soon as the
         // username looks wrong) so a failed login takes a similar amount of time either way,
         // and the error response never reveals whether the username was even recognized.
@@ -44,6 +48,6 @@ public class AuthService {
         }
 
         String token = jwtService.generateToken(username);
-        return new LoginResponse(token, "Bearer", jwtService.getExpirationSeconds());
+        return new AuthResult(token, username, jwtService.getExpirationSeconds());
     }
 }

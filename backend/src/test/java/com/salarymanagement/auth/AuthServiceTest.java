@@ -17,6 +17,12 @@ import static org.mockito.Mockito.when;
  * Pure Mockito unit tests for {@link AuthService}. Uses a real {@link BCryptPasswordEncoder}
  * (fast, no Spring context) so the actual hashing/matching logic is genuinely exercised; only
  * {@link JwtService} is mocked, since it is an external collaborator.
+ *
+ * <p>{@link AuthService#login} returns the package-private {@link AuthResult} (token + username
+ * + expiry) rather than a {@link LoginResponse} - the JWT itself is an internal detail that only
+ * {@link AuthController} (same package) turns into a cookie; it is asserted on here since this
+ * test lives in the same package, but a {@link LoginResponse} is never built with a token field
+ * at all.
  */
 @ExtendWith(MockitoExtension.class)
 class AuthServiceTest {
@@ -38,15 +44,15 @@ class AuthServiceTest {
     }
 
     @Test
-    void loginWithCorrectCredentialsReturnsAToken() {
+    void loginWithCorrectCredentialsReturnsAnAuthResult() {
         when(jwtService.generateToken(USERNAME)).thenReturn("a.jwt.token");
         when(jwtService.getExpirationSeconds()).thenReturn(3600L);
 
-        LoginResponse response = authService.login(USERNAME, RAW_PASSWORD);
+        AuthResult result = authService.login(USERNAME, RAW_PASSWORD);
 
-        assertEquals("a.jwt.token", response.token());
-        assertEquals("Bearer", response.tokenType());
-        assertEquals(3600L, response.expiresInSeconds());
+        assertEquals("a.jwt.token", result.token());
+        assertEquals(USERNAME, result.username());
+        assertEquals(3600L, result.expiresInSeconds());
     }
 
     @Test

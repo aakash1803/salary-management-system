@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -12,11 +13,16 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import tools.jackson.databind.ObjectMapper;
 
+import java.util.List;
+
 /**
- * Stateless JWT security configuration - and the sole place that constructs the JWT
- * infrastructure beans ({@link JwtService}, {@link JwtAuthenticationFilter},
+ * Stateless, cookie-based JWT security configuration - and the sole place that constructs the
+ * JWT infrastructure beans ({@link JwtService}, {@link JwtAuthenticationFilter},
  * {@link JwtAuthenticationEntryPoint}) via {@code @Bean} methods, rather than relying on
  * {@code @Component} scanning to discover them individually.
  *
@@ -35,18 +41,24 @@ import tools.jackson.databind.ObjectMapper;
  * tests elsewhere in this project.
  *
  * <p>{@link #passwordEncoder()}, {@link #jwtService(String, long)},
- * {@link #jwtAuthenticationFilter(JwtService)}, and
- * {@link #authenticationEntryPoint(ObjectMapper)} are unconditional - {@link AuthService} needs
- * the first two regardless of context type, and the latter two have no consumer besides
- * {@link #securityFilterChain}. Only {@link #securityFilterChain} itself is guarded with
- * {@link ConditionalOnWebApplication}, since it is the one bean here that depends on
- * {@link HttpSecurity}, which is only available in a servlet web application context - this
- * project's persistence tests use {@code @SpringBootTest(webEnvironment = WebEnvironment.NONE)}
+ * {@link #jwtAuthenticationFilter(JwtService, String)},
+ * {@link #authenticationEntryPoint(ObjectMapper)}, and {@link #corsConfigurationSource(String)}
+ * are unconditional - {@link AuthService} needs the first two regardless of context type, and the
+ * others have no consumer besides {@link #securityFilterChain}. Only {@link #securityFilterChain}
+ * itself is guarded with {@link ConditionalOnWebApplication}, since it is the one bean here that
+ * depends on {@link HttpSecurity}, which is only available in a servlet web application context -
+ * this project's persistence tests use {@code @SpringBootTest(webEnvironment = WebEnvironment.NONE)}
  * (a plain, non-web context), and without this guard, context startup for those tests would fail
  * trying to resolve {@code HttpSecurity}.
  *
  * <p>There is a single primary user role (HR Manager), so authorization here is simply
  * "authenticated or not" - no role/permission hierarchy is introduced.
+ *
+ * <p><b>CSRF</b> remains disabled - see docs/security-configuration.md for the reasoning (JWT
+ * lives in a {@code SameSite=Lax} HttpOnly cookie, CORS is restricted to a single configured
+ * trusted origin, and there are no authenticated state-changing GET endpoints). This is a
+ * deliberate decision for this application's current scope, not an oversight, and should be
+ * revisited if the frontend origin trust model changes.
  */
 @Configuration
 public class SecurityConfig {
@@ -64,8 +76,10 @@ public class SecurityConfig {
     }
 
     @Bean
-    public JwtAuthenticationFilter jwtAuthenticationFilter(JwtService jwtService) {
-        return new JwtAuthenticationFilter(jwtService);
+    public JwtAuthenticationFilter jwtAuthenticationFilter(
+            JwtService jwtService,
+            @Value("${app.security.jwt.cookie-name}") String cookieName) {
+        return new JwtAuthenticationFilter(jwtService, cookieName);
     }
 
     @Bean
@@ -73,20 +87,48 @@ public class SecurityConfig {
         return new JwtAuthenticationEntryPoint(objectMapper);
     }
 
+    /**
+     * Restricts cross-origin requests to the single configured, trusted Angular origin.
+     * {@code allowCredentials(true)} is required for the browser to send/accept the HttpOnly
+     * auth cookie cross-port (localhost:4200 -> localhost:8080 in development); Spring rejects
+     * combining {@code allowCredentials(true)} with a wildcard origin, so an explicit
+     * single-origin list is the only configuration that works here anyway.
+     */
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource(
+            @Value("${app.security.cors.allowed-origin}") String allowedOrigin) {
+        CorsConfiguration configuration = new CorsConfiguration();
+        configuration.setAllowedOrigins(List.of(allowedOrigin));
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedHeaders(List.of("Content-Type", "Accept"));
+        configuration.setAllowCredentials(true);
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
+    }
+
     @Bean
     @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             JwtAuthenticationFilter jwtAuthenticationFilter,
-            AuthenticationEntryPoint authenticationEntryPoint) throws Exception {
+            AuthenticationEntryPoint authenticationEntryPoint,
+            CorsConfigurationSource corsConfigurationSource) throws Exception {
 
         http
+                .cors(cors -> cors.configurationSource(corsConfigurationSource))
                 .csrf(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .formLogin(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/**").permitAll()
+                        // Preflight requests must be allowed through regardless of the target
+                        // endpoint's own auth requirement, or the browser's OPTIONS request to a
+                        // protected endpoint would be rejected with 401 before CORS is even
+                        // relevant to the actual follow-up request.
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        .requestMatchers("/api/auth/login", "/api/auth/logout").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(ex -> ex.authenticationEntryPoint(authenticationEntryPoint))
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
