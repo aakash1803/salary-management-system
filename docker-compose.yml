@@ -1,0 +1,61 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: salary-backend
+    ports:
+      - "8080:8080"
+    volumes:
+      - sqlite_data:/app/data
+    environment:
+      - APP_SECURITY_CORS_ALLOWED_ORIGIN=http://localhost
+      - APP_SECURITY_JWT_COOKIE_SECURE=false
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --post-data='' http://127.0.0.1:8080/api/auth/logout -O /dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      - salary-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: salary-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 http://127.0.0.1:80/ -O /dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      salary-network: null
+
+  seeder:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: seeder
+    container_name: salary-seeder
+    profiles:
+      - tools
+    volumes:
+      - sqlite_data:/app/data
+    networks:
+      - salary-network
+
+volumes:
+  sqlite_data:
+    driver: local
+
+networks:
+  salary-network:
+    driver: bridge
