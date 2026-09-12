@@ -51,7 +51,7 @@ describe('LoginPage Component', () => {
 
     const req = httpMock.expectOne('/api/auth/login');
     expect(req.request.method).toBe('POST');
-    expect(req.request.body).toEqual({ username: 'hr.manager', password: 'password123' });
+    expect(req.request.body).toEqual({ username: 'hr.manager', password: 'changeme123!' });
 
     req.flush({ username: 'hr.manager', expiresInSeconds: 3600 });
     fixture.detectChanges();
