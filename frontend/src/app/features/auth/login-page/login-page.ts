@@ -22,7 +22,7 @@ export class LoginPage {
       nonNullable: true,
       validators: [Validators.required, Validators.minLength(3)]
     }),
-    password: new FormControl('password123', {
+    password: new FormControl('changeme123!', {
       nonNullable: true,
       validators: [Validators.required, Validators.minLength(6)]
     })
